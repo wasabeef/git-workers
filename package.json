@@ -1,0 +1,23 @@
+{
+  "name": "git-workers",
+  "version": "0.1.0",
+  "description": "Interactive Git worktree manager",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wasabeef/git-workers.git"
+  },
+  "scripts": {
+    "prepare": "lefthook install",
+    "lefthook": "lefthook",
+    "format": "cargo fmt --all && prettier --write .",
+    "lint": "cargo clippy --all-targets --all-features -- -D warnings",
+    "check": "bun run fmt && bun run lint && bun run test",
+    "build": "cargo build --release",
+    "dev": "cargo run",
+    "watch": "cargo watch -x run"
+  },
+  "devDependencies": {
+    "lefthook": "^1.10.0",
+    "prettier": "^3.5.3"
+  }
+}

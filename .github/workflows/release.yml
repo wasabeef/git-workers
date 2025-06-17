@@ -1,0 +1,263 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Trigger on existing tags
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: release_notes
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: .github/cliff.toml
+          args: --latest --strip header
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.release_notes.outputs.content }}
+          draft: false
+          prerelease: false
+
+  release:
+    name: Release - ${{ matrix.platform.release_for }}
+    needs: create-release
+    strategy:
+      matrix:
+        platform:
+          - release_for: Linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: gw
+            name: gw-Linux-x86_64.tar.gz
+            command: build
+
+          - release_for: macOS-x86_64
+            os: macOS-latest
+            target: x86_64-apple-darwin
+            bin: gw
+            name: gw-Darwin-x86_64.tar.gz
+            command: build
+
+          - release_for: macOS-aarch64
+            os: macOS-latest
+            target: aarch64-apple-darwin
+            bin: gw
+            name: gw-Darwin-aarch64.tar.gz
+            command: build
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Build binary
+        run: |
+          cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Prepare binaries with shell integration
+        run: |
+          mkdir -p release-package
+          cp target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }} release-package/
+          cp -r shell release-package/
+          cd release-package
+          tar czvf ../${{ matrix.platform.name }} *
+          cd -
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ matrix.platform.name }}
+          asset_name: ${{ matrix.platform.name }}
+          tag: ${{ github.ref }}
+
+  homebrew:
+    needs: [create-release, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gw repository
+        uses: actions/checkout@v4
+        with:
+          path: git-workers
+
+      - name: Checkout gw-tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: wasabeef/homebrew-gw-tap
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          path: gw-tap
+
+      - name: Wait for release assets
+        run: sleep 60
+
+      - name: Update Homebrew formula
+        run: |
+          cd git-workers
+          VERSION=${{ github.ref_name }}
+          VERSION_NUM=${VERSION#v}
+
+          echo "Version: $VERSION"
+          echo "Version number: $VERSION_NUM"
+
+          # Download and calculate SHA256
+          echo "Calculating SHA256 for each platform..."
+
+          MACOS_ARM64_URL="https://github.com/wasabeef/git-workers/releases/download/${VERSION}/gw-Darwin-aarch64.tar.gz"
+          MACOS_X86_URL="https://github.com/wasabeef/git-workers/releases/download/${VERSION}/gw-Darwin-x86_64.tar.gz"
+          LINUX_X86_URL="https://github.com/wasabeef/git-workers/releases/download/${VERSION}/gw-Linux-x86_64.tar.gz"
+
+          echo "URLs:"
+          echo "  macOS ARM64: $MACOS_ARM64_URL"
+          echo "  macOS x86_64: $MACOS_X86_URL"
+          echo "  Linux x86_64: $LINUX_X86_URL"
+
+          # Download files with retry and calculate SHA256
+          echo "Downloading release assets..."
+
+          # Function to download with retry
+          download_with_retry() {
+            local url=$1
+            local output=$2
+            local max_attempts=5
+            local attempt=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              echo "  Attempt $attempt/$max_attempts for $output"
+              if curl -sL "$url" -o "$output"; then
+                if [ -s "$output" ]; then
+                  echo "  ✓ Downloaded $output successfully"
+                  return 0
+                else
+                  echo "  ✗ Downloaded file is empty"
+                fi
+              else
+                echo "  ✗ Download failed"
+              fi
+              
+              if [ $attempt -lt $max_attempts ]; then
+                echo "  Waiting 10 seconds before retry..."
+                sleep 10
+              fi
+              attempt=$((attempt + 1))
+            done
+            
+            echo "  ✗ Failed to download after $max_attempts attempts"
+            return 1
+          }
+
+          # Download each file with retry
+          download_with_retry "$MACOS_ARM64_URL" "gw-macos-arm64.tar.gz" || exit 1
+          download_with_retry "$MACOS_X86_URL" "gw-macos-x86.tar.gz" || exit 1
+          download_with_retry "$LINUX_X86_URL" "gw-linux-x86.tar.gz" || exit 1
+
+          # Calculate SHA256
+          MACOS_ARM64_SHA=$(shasum -a 256 gw-macos-arm64.tar.gz | cut -d' ' -f1)
+          MACOS_X86_SHA=$(shasum -a 256 gw-macos-x86.tar.gz | cut -d' ' -f1)
+          LINUX_X86_SHA=$(shasum -a 256 gw-linux-x86.tar.gz | cut -d' ' -f1)
+
+          # Verify SHA256 values are different
+          if [ "$MACOS_ARM64_SHA" = "$MACOS_X86_SHA" ] || [ "$MACOS_ARM64_SHA" = "$LINUX_X86_SHA" ]; then
+            echo "ERROR: SHA256 values are identical, which suggests download issues"
+            echo "  macOS ARM64: $MACOS_ARM64_SHA"
+            echo "  macOS x86_64: $MACOS_X86_SHA"
+            echo "  Linux x86_64: $LINUX_X86_SHA"
+            exit 1
+          fi
+
+          # Clean up downloaded files
+          rm -f gw-*.tar.gz
+
+          echo "SHA256 values:"
+          echo "  macOS ARM64: $MACOS_ARM64_SHA"
+          echo "  macOS x86_64: $MACOS_X86_SHA"
+          echo "  Linux x86_64: $LINUX_X86_SHA"
+
+          # Generate formula using printf to avoid heredoc issues
+          printf 'class Gw < Formula
+            desc "Interactive Git worktree manager"
+            homepage "https://github.com/wasabeef/git-workers"
+            version "%s"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "%s"
+                sha256 "%s"
+              else
+                url "%s"
+                sha256 "%s"
+              end
+            end
+
+            on_linux do
+              url "%s"
+              sha256 "%s"
+            end
+
+            def install
+              bin.install "gw"
+              (share/"gw").install "shell"
+            end
+
+            def caveats
+              <<~EOS
+                To enable shell integration for automatic directory switching:
+
+                For bash (~/.bashrc):
+                  source #{share}/gw/shell/gw.sh
+
+                For zsh (~/.zshrc):
+                  source #{share}/gw/shell/gw.sh
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/gw --version")
+            end
+          end\n' \
+          "$VERSION_NUM" \
+          "$MACOS_ARM64_URL" "$MACOS_ARM64_SHA" \
+          "$MACOS_X86_URL" "$MACOS_X86_SHA" \
+          "$LINUX_X86_URL" "$LINUX_X86_SHA" \
+          > ../gw-tap/Formula/gw.rb
+
+          echo "Generated formula:"
+          cat ../gw-tap/Formula/gw.rb
+
+      - name: Commit and push formula update
+        run: |
+          cd gw-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add timestamp to force update even if content is the same
+          echo "" >> Formula/gw.rb
+          echo "# Updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> Formula/gw.rb
+
+          git add Formula/gw.rb
+          git commit -m "gw ${{ github.ref_name }}"
+          git push
+          echo "Formula updated successfully"

@@ -1,0 +1,50 @@
+[package]
+name = "git-workers"
+version = "0.1.0"
+edition = "2021"
+authors = ["Daichi Furiya"]
+description = "Interactive Git worktree manager with shell integration"
+readme = "README.md"
+repository = "https://github.com/wasabeef/git-workers"
+license = "MIT OR Apache-2.0"
+keywords = ["git", "worktree", "cli", "interactive", "management"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "gw"
+path = "src/main.rs"
+
+[dependencies]
+# Git Operations
+git2 = "0.18"
+
+# CLI Framework  
+dialoguer = "0.10"
+console = "0.15"
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+# Error Handling
+anyhow = "1.0"
+
+# Utility
+dirs = "5.0"
+colored = "2.1"
+chrono = "0.4"
+fuzzy-matcher = "0.3"
+indicatif = "0.17"
+rustyline = "14.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
