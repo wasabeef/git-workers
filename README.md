@@ -1,9 +1,11 @@
 # Git Workers
 
-An interactive CLI tool for managing Git worktrees with ease.
-
 [![CI](https://github.com/wasabeef/git-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/wasabeef/git-workers/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+An interactive CLI tool for managing Git worktrees with ease.
+
+https://github.com/user-attachments/assets/bb58444f-4936-411c-be51-62faf08fe9a0
 
 ## Features
 
