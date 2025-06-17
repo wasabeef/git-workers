@@ -170,6 +170,17 @@ fn test_delete_branch_success() -> Result<()> {
         .args(["checkout", "-b", "test-branch"])
         .output()?;
 
+    // Add a commit to test-branch and push it back to main to ensure it's merged
+    std::fs::write(repo_path.join("test.txt"), "test")?;
+    Command::new("git")
+        .current_dir(&repo_path)
+        .args(["add", "test.txt"])
+        .output()?;
+    Command::new("git")
+        .current_dir(&repo_path)
+        .args(["commit", "-m", "Test commit"])
+        .output()?;
+
     Command::new("git")
         .current_dir(&repo_path)
         .args(["checkout", "main"])
@@ -180,6 +191,12 @@ fn test_delete_branch_success() -> Result<()> {
                 .args(["checkout", "master"])
                 .output()
         })?;
+
+    // Merge test-branch to main so it can be deleted
+    Command::new("git")
+        .current_dir(&repo_path)
+        .args(["merge", "test-branch"])
+        .output()?;
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 

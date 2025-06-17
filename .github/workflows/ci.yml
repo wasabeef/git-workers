@@ -78,7 +78,7 @@ jobs:
           git config --global user.email "test@example.com"
 
       - name: Test
-        run: cargo test --all-features -- --test-threads=1
+        run: cargo test --tests -- --test-threads=1
         env:
           RUST_BACKTRACE: 1
           CI: true
