@@ -5,7 +5,7 @@
 
 An interactive CLI tool for managing Git worktrees with ease.
 
-https://github.com/user-attachments/assets/0d3152c6-e298-4c02-a9aa-d084a8ffa659
+https://github.com/user-attachments/assets/bb58444f-4936-411c-be51-62faf08fe9a0
 
 ## Features
 
