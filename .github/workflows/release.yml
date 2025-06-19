@@ -74,8 +74,6 @@ jobs:
           targets: ${{ matrix.platform.target }}
 
       - name: Build binary
-        env:
-          OPENSSL_STATIC: 1
         run: |
           cargo build --release --target ${{ matrix.platform.target }}
 
