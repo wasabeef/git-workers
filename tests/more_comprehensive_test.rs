@@ -19,11 +19,11 @@ mod git_tests {
         let repo = Repository::init(&repo_path)?;
         create_initial_commit(&repo)?;
 
-        // Checkout to detached HEAD
-        Command::new("git")
-            .current_dir(&repo_path)
-            .args(["checkout", "HEAD~0"])
-            .output()?;
+        // Checkout to detached HEAD using git2
+        let head = repo.head()?;
+        let commit = head.peel_to_commit()?;
+        repo.set_head_detached(commit.id())?;
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))?;
 
         let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
@@ -88,27 +88,32 @@ mod git_tests {
         let repo = Repository::init(&repo_path)?;
         create_initial_commit(&repo)?;
 
-        // Simulate remote branch
-        Command::new("git")
-            .current_dir(&repo_path)
-            .args(["checkout", "-b", "remote-tracking"])
-            .output()?;
+        // Create a branch using git2
+        let obj = repo.revparse_single("HEAD")?;
+        let commit = obj.as_commit().unwrap();
+        repo.branch("remote-tracking", commit, false)?;
 
-        Command::new("git")
-            .current_dir(&repo_path)
-            .args(["checkout", "main"])
-            .output()
-            .or_else(|_| {
-                Command::new("git")
-                    .current_dir(&repo_path)
-                    .args(["checkout", "master"])
-                    .output()
-            })?;
+        // Ensure we're on main/master branch
+        let head_ref = repo.head()?;
+        let current_branch = head_ref.shorthand().unwrap_or("main");
+
+        if current_branch == "remote-tracking" {
+            // Switch back to main or master
+            if repo.find_branch("main", git2::BranchType::Local).is_ok() {
+                repo.set_head("refs/heads/main")?;
+            } else if repo.find_branch("master", git2::BranchType::Local).is_ok() {
+                repo.set_head("refs/heads/master")?;
+            }
+            repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))?;
+        }
 
         let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
         // Create worktree from existing branch
         let result = manager.create_worktree("remote-work", Some("remote-tracking"));
+        if let Err(e) = &result {
+            eprintln!("Failed to create worktree: {}", e);
+        }
         assert!(result.is_ok());
 
         Ok(())
@@ -130,7 +135,10 @@ mod config_tests {
     fn test_config_debug_trait() {
         let mut hooks = HashMap::new();
         hooks.insert("test".to_string(), vec!["echo test".to_string()]);
-        let config = Config { hooks };
+        let config = Config {
+            repository: git_workers::config::RepositoryConfig::default(),
+            hooks,
+        };
 
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("Config"));

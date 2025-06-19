@@ -25,16 +25,27 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
+use unicode_width::UnicodeWidthStr;
 
+use crate::constants::section_header;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
 use crate::input_esc_raw::{
     input_esc_raw as input_esc, input_esc_with_default_raw as input_esc_with_default,
 };
-use crate::menu::MenuItem;
-use crate::utils::{self, get_terminal, get_theme};
+use crate::utils::{self, get_theme, press_any_key_to_continue, write_switch_path};
 
-// Helper function to get worktree icon
+/// Gets the appropriate icon for a worktree based on its status
+///
+/// # Arguments
+///
+/// * `is_current` - Whether this is the currently active worktree
+///
+/// # Returns
+///
+/// Returns a colored icon:
+/// - `→` in bright green for the current worktree
+/// - `▸` in bright blue for other worktrees
 fn get_worktree_icon(is_current: bool) -> colored::ColoredString {
     if is_current {
         "→".bright_green().bold()
@@ -43,77 +54,61 @@ fn get_worktree_icon(is_current: bool) -> colored::ColoredString {
     }
 }
 
-// Helper function to format branch label
-fn format_branch_label(branch: &str, is_current: bool) -> String {
-    if is_current {
-        format!(
-            "{} {} {}",
-            "Branch:".bright_black(),
-            branch.yellow(),
-            "[CURRENT]".bright_green().bold()
-        )
-    } else {
-        format!("{} {}", "Branch:".bright_black(), branch.yellow())
-    }
-}
+// ===== Public API =====
 
-/// Executes the selected menu command
+/// Lists all worktrees with pagination support
 ///
-/// This is the main entry point for all menu commands. It dispatches
-/// the selected menu item to the appropriate handler function.
+/// Displays a formatted table of all worktrees in the repository, including:
+/// - Worktree name
+/// - Associated branch
+/// - Modified status (whether the worktree has uncommitted changes)
+/// - Full path to the worktree
 ///
-/// # Arguments
+/// The current worktree is highlighted and shown first, followed by others
+/// in alphabetical order. For repositories with many worktrees, the list
+/// is paginated based on terminal height.
 ///
-/// * `item` - The menu item selected by the user
+/// # Navigation
+///
+/// - Arrow keys (← →): Navigate between pages
+/// - ESC: Return to main menu
+/// - Any other key: Return to main menu
 ///
 /// # Returns
 ///
-/// * `Ok(true)` - If the command requests to switch to a different worktree
-/// * `Ok(false)` - If the command completes normally without switching
-/// * `Err(_)` - If the command encounters an error
+/// Returns `Ok(())` on successful completion or when the user exits.
 ///
-/// # Special Behavior
+/// # Errors
 ///
-/// The `SwitchWorktree`, `SearchWorktrees`, and `CreateWorktree` commands
-/// may return `Ok(true)` to signal that the shell should change directory.
-pub fn execute(item: MenuItem) -> Result<bool> {
+/// Returns an error if:
+/// - Git repository operations fail
+/// - Terminal operations fail
+pub fn list_worktrees() -> Result<()> {
     let manager = GitWorktreeManager::new()?;
-
-    match item {
-        MenuItem::ListWorktrees => list_worktrees(&manager)?,
-        MenuItem::SearchWorktrees => return search_worktrees(&manager),
-        MenuItem::CreateWorktree => return create_worktree(&manager),
-        MenuItem::DeleteWorktree => delete_worktree(&manager)?,
-        MenuItem::BatchDelete => batch_delete_worktrees(&manager)?,
-        MenuItem::CleanupOldWorktrees => cleanup_old_worktrees(&manager)?,
-        MenuItem::SwitchWorktree => return switch_worktree(&manager),
-        MenuItem::RenameWorktree => rename_worktree(&manager)?,
-        MenuItem::Exit => unreachable!(),
-    }
-
-    Ok(false)
+    list_worktrees_internal(&manager)
 }
 
-fn list_worktrees(manager: &GitWorktreeManager) -> Result<()> {
-    // Show loading spinner while fetching worktree info
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.green} Loading worktrees...")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(100));
-
+/// Internal implementation of list_worktrees
+///
+/// Separated for better testability and code organization.
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Implementation Details
+///
+/// 1. Retrieves all worktrees from the repository
+/// 2. Sorts them (current first, then alphabetically)
+/// 3. Calculates column widths for proper alignment
+/// 4. Determines pagination based on terminal height
+/// 5. Displays the table with navigation support
+fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
-
-    // プログレスバーを適切に終了
-    spinner.finish_and_clear();
-    // 短時間待機してターミナル状態を安定化
-    std::thread::sleep(std::time::Duration::from_millis(50));
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees found.".yellow());
+        println!("{}", "• No worktrees found.".bright_black());
         println!();
         println!(
             "  {} Use '{}' to create your first worktree",
@@ -121,313 +116,497 @@ fn list_worktrees(manager: &GitWorktreeManager) -> Result<()> {
             "+ Create worktree".green()
         );
         println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
-    // Pagination settings
-    const PAGE_SIZE: usize = 10;
-    let total_pages = worktrees.len().div_ceil(PAGE_SIZE);
+    // Sort worktrees: current first, then alphabetically
+    let mut sorted_worktrees = worktrees;
+    sorted_worktrees.sort_by(|a, b| {
+        if a.is_current && !b.is_current {
+            std::cmp::Ordering::Less
+        } else if !a.is_current && b.is_current {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.cmp(&b.name)
+        }
+    });
+
+    // Find the longest name and branch for formatting (using display width)
+    let max_name_len = sorted_worktrees
+        .iter()
+        .map(|w| w.name.width())
+        .max()
+        .unwrap_or(0);
+    let max_branch_len = sorted_worktrees
+        .iter()
+        .map(|w| w.branch.width())
+        .max()
+        .unwrap_or(0);
+
+    // Determine items per page dynamically based on terminal height
+    let term_height = Term::stdout().size().0 as usize;
+    let header_lines = 7; // Title + header + separator (increased for modified column)
+    let footer_lines = 4; // Navigation help + prompt
+    let available_lines = term_height.saturating_sub(header_lines + footer_lines);
+    let items_per_page = available_lines.max(5); // At least 5 items per page
+
+    let total_pages = sorted_worktrees.len().div_ceil(items_per_page);
     let mut current_page = 0;
 
     loop {
-        // Screen clearing is handled by main.rs, not here
+        let term = Term::stdout();
+        term.clear_screen()?;
 
-        println!("{}", "• Current worktrees:".green().bold());
+        // Print header
         println!();
+        println!("{}", section_header("Worktrees"));
 
-        // Calculate page boundaries
-        let start = current_page * PAGE_SIZE;
-        let end = std::cmp::min(start + PAGE_SIZE, worktrees.len());
+        let start_idx = current_page * items_per_page;
+        let end_idx = ((current_page + 1) * items_per_page).min(sorted_worktrees.len());
+        let page_worktrees = &sorted_worktrees[start_idx..end_idx];
 
-        // Display worktrees for current page
-        for wt in &worktrees[start..end] {
+        // Table header
+        let name_width = max_name_len.max(8);
+        let branch_width = max_branch_len.max(10) + 10; // Extra space for [current] marker
+        let modified_width = 8;
+
+        println!();
+        println!(
+            "  {:<name_width$} {:<branch_width$} {:<modified_width$} {}",
+            "Name".bright_white().bold(),
+            "Branch".bright_white().bold(),
+            "Modified".bright_white().bold(),
+            "Path".bright_white().bold(),
+            name_width = name_width,
+            branch_width = branch_width,
+            modified_width = modified_width
+        );
+        println!(
+            "  {:-<name_width$} {:-<branch_width$} {:-<modified_width$} {:-<path_width$}",
+            "-",
+            "-",
+            "-",
+            "-",
+            name_width = name_width,
+            branch_width = branch_width,
+            modified_width = modified_width,
+            path_width = 40
+        );
+
+        // Table rows
+        for wt in page_worktrees {
             let icon = get_worktree_icon(wt.is_current);
+            let branch_display = if wt.is_current {
+                format!("{} [current]", wt.branch).bright_green()
+            } else {
+                wt.branch.yellow()
+            };
+
+            // Modified status
+            let modified = if wt.has_changes {
+                "Yes".bright_yellow()
+            } else {
+                "No".bright_black()
+            };
 
             println!(
-                "  {} {} - {}",
+                "{} {:<name_width$} {:<branch_width$} {:<modified_width$} {}",
                 icon,
-                wt.name.bright_white().bold(),
+                if wt.is_current {
+                    wt.name.bright_green().bold()
+                } else {
+                    wt.name.normal()
+                },
+                branch_display,
+                modified,
                 wt.path.display().to_string().bright_black(),
+                name_width = name_width,
+                branch_width = branch_width,
+                modified_width = modified_width
             );
-
-            let branch_label = format_branch_label(&wt.branch, wt.is_current);
-
-            println!("    {}", branch_label);
-
-            // Show commit info
-            if let Some(commit) = &wt.last_commit {
-                println!(
-                    "    {} {} - {} ({})",
-                    "Commit:".bright_black(),
-                    commit.id.bright_blue(),
-                    commit.message.bright_black(),
-                    commit.time.bright_black()
-                );
-            }
-
-            // Show status indicators
-            let mut status_parts = Vec::new();
-
-            if wt.has_changes {
-                status_parts.push("● Modified".yellow().to_string());
-            }
-
-            if let Some((ahead, behind)) = wt.ahead_behind {
-                if ahead > 0 {
-                    status_parts.push(format!("↑{}", ahead).green().to_string());
-                }
-                if behind > 0 {
-                    status_parts.push(format!("↓{}", behind).red().to_string());
-                }
-            }
-
-            if !status_parts.is_empty() {
-                println!(
-                    "    {} {}",
-                    "Status:".bright_black(),
-                    status_parts.join(" ")
-                );
-            }
         }
 
+        // Navigation footer
         println!();
-
-        // Pagination controls for multiple pages or pause for single page
         if total_pages > 1 {
             println!(
-                "{}",
-                format!("Page {}/{}", current_page + 1, total_pages).bright_black()
+                "  {} Page {} of {} (showing {}-{} of {})",
+                "•".bright_blue(),
+                current_page + 1,
+                total_pages,
+                start_idx + 1,
+                end_idx,
+                sorted_worktrees.len()
             );
-            println!("{}", "[n]ext [p]revious [q]uit".bright_black());
+            println!(
+                "  {} Use ← → to navigate pages, ESC to return",
+                "•".bright_blue()
+            );
+        }
+        println!();
 
-            match get_terminal().read_key()? {
-                console::Key::Char('n') => {
-                    if current_page < total_pages - 1 {
-                        current_page += 1;
-                    } else {
-                        break;
-                    }
-                }
-                console::Key::Char('p') => {
-                    current_page = current_page.saturating_sub(1);
-                }
-                console::Key::Char('q') | console::Key::Escape => break,
-                _ => break,
+        // Wait for key press
+        println!("Press any key to continue...");
+        match term.read_key()? {
+            console::Key::ArrowLeft if current_page > 0 => {
+                current_page -= 1;
             }
-        } else {
-            // Single page - just show a simple continue prompt
-            println!("{}", "[Press any key to continue]".bright_black());
-            let _ = get_terminal().read_key();
-            break;
+            console::Key::ArrowRight if current_page < total_pages - 1 => {
+                current_page += 1;
+            }
+            console::Key::Escape => break,
+            _ => break,
         }
     }
 
     Ok(())
 }
 
-fn create_worktree(manager: &GitWorktreeManager) -> Result<bool> {
-    // Use custom input that supports ESC
-    let name_input = match input_esc("Worktree name (ESC to cancel)") {
-        Some(input) => input,
-        None => {
-            // ESC pressed - cancel
-            return Ok(false);
-        }
+/// Searches through worktrees using fuzzy matching
+///
+/// Provides an interactive search interface that matches against both
+/// worktree names and branch names. Uses the Skim fuzzy matcher algorithm
+/// for flexible, typo-tolerant searching.
+///
+/// # Search Behavior
+///
+/// - Searches both worktree names and branch names
+/// - Case-insensitive matching
+/// - Supports partial matches and typos
+/// - Results are sorted by match score (best matches first)
+///
+/// # Returns
+///
+/// Returns `true` if the user switched to a worktree, `false` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Git repository operations fail
+/// - Terminal operations fail
+///
+/// # Example Search Patterns
+///
+/// - `feat` matches "feature/login", "feature/logout"
+/// - `lgn` matches "login", "feature/login" (fuzzy matching)
+pub fn search_worktrees() -> Result<bool> {
+    let manager = GitWorktreeManager::new()?;
+    search_worktrees_internal(&manager)
+}
+
+/// Internal implementation of search_worktrees
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Returns
+///
+/// Returns `true` if a worktree was selected and switched to, `false` otherwise
+/// (includes ESC cancellation or selecting current worktree).
+fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
+    let worktrees = manager.list_worktrees()?;
+
+    if worktrees.is_empty() {
+        println!();
+        println!("{}", "• No worktrees to search.".yellow());
+        println!();
+        press_any_key_to_continue()?;
+        return Ok(false);
+    }
+
+    // Get search query
+    println!();
+    println!("{}", section_header("Search Worktrees"));
+    println!();
+
+    let search_query = match input_esc("Enter search query (name or branch)") {
+        Some(query) => query.trim().to_string(),
+        None => return Ok(false),
     };
 
-    if name_input.is_empty() {
-        // Operation cancelled - return silently
+    if search_query.is_empty() {
         return Ok(false);
     }
 
-    // Validate the input
-    if name_input.trim().is_empty() {
-        utils::print_error("Worktree name cannot be empty. Please provide a valid name.");
+    // Perform fuzzy search
+    let matcher = SkimMatcherV2::default();
+    let mut results: Vec<(i64, String, &WorktreeInfo)> = worktrees
+        .iter()
+        .filter_map(|wt| {
+            let name_score = matcher.fuzzy_match(&wt.name, &search_query).unwrap_or(0);
+            let branch_score = matcher.fuzzy_match(&wt.branch, &search_query).unwrap_or(0);
+            let max_score = name_score.max(branch_score);
+
+            if max_score > 0 {
+                let display = format!("{} ({})", wt.name, wt.branch);
+                Some((max_score, display, wt))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if results.is_empty() {
+        println!();
+        println!("{}", "• No matching worktrees found.".yellow());
+        println!();
+        press_any_key_to_continue()?;
         return Ok(false);
     }
 
-    if name_input.contains(char::is_whitespace) {
-        utils::print_error(
-            "Worktree name cannot contain spaces. Use hyphens or underscores instead.",
-        );
+    // Sort by score (highest first)
+    results.sort_by(|a, b| b.0.cmp(&a.0));
+
+    // Display results
+    println!();
+    println!(
+        "{} Found {} matching worktree{}:",
+        "•".bright_green(),
+        results.len(),
+        if results.len() == 1 { "" } else { "s" }
+    );
+    println!();
+
+    let items: Vec<String> = results
+        .iter()
+        .map(|(score, display, wt)| {
+            let mut item = format!("{} [score: {}]", display, score);
+            if wt.is_current {
+                item.push_str(" (current)");
+            }
+            item
+        })
+        .collect();
+
+    let selection = match Select::with_theme(&get_theme())
+        .with_prompt("Select a worktree to switch to (ESC to cancel)")
+        .items(&items)
+        .interact_opt()?
+    {
+        Some(selection) => selection,
+        None => return Ok(false),
+    };
+
+    let selected_worktree = results[selection].2;
+
+    if selected_worktree.is_current {
+        println!();
+        println!("{}", "• Already in this worktree.".yellow());
+        println!();
+        press_any_key_to_continue()?;
         return Ok(false);
     }
 
-    let name = name_input;
+    // Switch to the selected worktree
+    write_switch_path(&selected_worktree.path);
 
-    // Check if this is the first worktree
+    println!();
+    println!(
+        "{} Switching to worktree '{}'",
+        "+".green(),
+        selected_worktree.name.bright_white().bold()
+    );
+    println!(
+        "  {} {}",
+        "Path:".bright_black(),
+        selected_worktree.path.display()
+    );
+    println!(
+        "  {} {}",
+        "Branch:".bright_black(),
+        selected_worktree.branch.yellow()
+    );
+
+    // Execute post-switch hooks
+    if let Err(e) = hooks::execute_hooks(
+        "post-switch",
+        &HookContext {
+            worktree_name: selected_worktree.name.clone(),
+            worktree_path: selected_worktree.path.clone(),
+        },
+    ) {
+        utils::print_warning(&format!("Hook execution warning: {}", e));
+    }
+
+    Ok(true)
+}
+
+/// Creates a new worktree interactively
+///
+/// Guides the user through creating a new worktree with the following steps:
+///
+/// 1. **Name Input**: Prompts for the worktree name
+/// 2. **Location Selection** (first worktree only):
+///    - Same level as repository: `../worktree-name`
+///    - In subdirectory (recommended): `../repo/worktrees/worktree-name`
+/// 3. **Branch Selection**:
+///    - Create from current HEAD
+///    - Create from existing branch (shows branch list)
+/// 4. **Creation**: Creates the worktree with progress indication
+/// 5. **Post-create Hooks**: Executes any configured post-create hooks
+/// 6. **Switch Option**: Asks if user wants to switch to the new worktree
+///
+/// # Worktree Patterns
+///
+/// The first worktree establishes the pattern for subsequent worktrees.
+/// If the first worktree is created at the same level as the repository,
+/// all future worktrees follow that pattern.
+///
+/// # Path Handling
+///
+/// - "Same level" paths (`../name`) are canonicalized for clean display without `..`
+/// - "In subdirectory" paths create worktrees in `worktrees/` folder within the repository
+/// - All paths are resolved to absolute canonical paths before creation
+/// - Parent directories are created automatically if needed
+///
+/// # Returns
+///
+/// Returns `true` if the user created and switched to a new worktree,
+/// `false` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Git repository operations fail
+/// - File system operations fail
+/// - User input is invalid
+pub fn create_worktree() -> Result<bool> {
+    let manager = GitWorktreeManager::new()?;
+    create_worktree_internal(&manager)
+}
+
+/// Internal implementation of create_worktree
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Implementation Notes
+///
+/// - Validates worktree name (non-empty)
+/// - Detects existing worktree patterns for consistency
+/// - Handles both branch and HEAD-based creation
+/// - Executes lifecycle hooks at appropriate times
+fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
+    println!();
+    println!("{}", section_header("Create New Worktree"));
+    println!();
+
+    // Get existing worktrees to detect pattern
     let existing_worktrees = manager.list_worktrees()?;
-    let is_first_worktree = existing_worktrees.is_empty();
+    let has_worktrees = !existing_worktrees.is_empty();
 
-    // For the first worktree, ask for directory structure
-    let worktree_path = if is_first_worktree {
-        println!();
-        println!(
-            "{}",
-            "Setting up worktree directory structure"
-                .bright_cyan()
-                .bold()
-        );
-        println!(
-            "{}",
-            "This only needs to be configured once.".bright_black()
-        );
-        println!();
+    // Get worktree name
+    let name = match input_esc("Enter worktree name") {
+        Some(name) => name.trim().to_string(),
+        None => return Ok(false),
+    };
 
-        // Get repository info
-        let repo_path = manager
+    if name.is_empty() {
+        utils::print_error("Worktree name cannot be empty");
+        return Ok(false);
+    }
+
+    // If this is the first worktree, let user choose the pattern
+    let final_name = if !has_worktrees {
+        println!();
+        println!("{}", "First worktree - choose location:".bright_cyan());
+
+        // Get repository name for display
+        let repo_name = manager
             .repo()
             .workdir()
-            .unwrap_or_else(|| manager.repo().path())
-            .to_string_lossy();
-        let repo_parent = std::path::Path::new(&*repo_path)
-            .parent()
-            .map(|p| p.to_string_lossy())
-            .unwrap_or_default();
-        let repo_name = std::path::Path::new(&*repo_path)
-            .file_name()
-            .map(|n| n.to_string_lossy())
-            .unwrap_or_default();
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("repo");
 
-        // Show examples
-        println!("{}:", "Examples for worktree location".bright_white());
-        println!();
-        println!("  {} Same level as repository:", "1.".bright_yellow());
-        println!(
-            "     {}/{}  {}",
-            repo_parent,
-            repo_name,
-            "(main repository)".bright_black()
-        );
-        println!(
-            "     {}/{}  {}",
-            repo_parent,
-            name,
-            "(new worktree)".bright_green()
-        );
-        println!();
-        println!("  {} In subdirectory (recommended):", "2.".bright_yellow());
-        println!(
-            "     {}/{}  {}",
-            repo_parent,
-            repo_name,
-            "(main repository)".bright_black()
-        );
-        println!(
-            "     {}/{}/worktrees/{}  {}",
-            repo_parent,
-            repo_name,
-            name,
-            "(new worktree)".bright_green()
-        );
-        println!();
-
-        let location_options = vec![
-            format!("Same level as repository ({}/{})", repo_parent, name),
-            format!(
-                "In subdirectory ({}/{}/worktrees/{})",
-                repo_parent, repo_name, name
-            ),
+        let options = vec![
+            format!("Same level as repository (../{name})"),
+            format!("In subdirectory ({repo_name}/worktrees/{name})"),
         ];
 
-        let location_selection = match Select::with_theme(&get_theme())
-            .with_prompt("Where should worktrees be created?")
-            .items(&location_options)
+        let selection = match Select::with_theme(&get_theme())
+            .with_prompt("Select worktree location pattern")
+            .items(&options)
             .default(1) // Default to subdirectory (recommended)
             .interact_opt()?
         {
             Some(selection) => selection,
-            None => {
-                // ESC pressed - cancel
-                return Ok(false);
-            }
+            None => return Ok(false),
         };
 
-        match location_selection {
-            0 => {
-                // Same level - just use the name
-                name.clone()
-            }
-            1 => {
-                // Inside repository in worktrees subdirectory
-                format!("../{}/worktrees/{}", repo_name, name)
-            }
-            _ => unreachable!(),
+        match selection {
+            0 => format!("../{}", name),        // Same level
+            _ => format!("worktrees/{}", name), // Subdirectory pattern
         }
     } else {
-        // For subsequent worktrees, use just the name
-        // GitWorktreeManager will detect the existing pattern
         name.clone()
     };
 
-    // Ask if user wants to create from existing branch or new branch
-    let branch_options = vec![
-        "Create from current branch",
-        "Create from existing branch",
-        "Create new branch",
-    ];
+    // Branch handling
+    println!();
+    let branch_options = vec!["Create from current HEAD", "Create from existing branch"];
 
-    let branch_selection = match Select::with_theme(&get_theme())
-        .with_prompt("How would you like to create the worktree? (ESC to cancel)")
+    let branch_choice = match Select::with_theme(&get_theme())
+        .with_prompt("Select branch option")
         .items(&branch_options)
-        .default(0)
         .interact_opt()?
     {
-        Some(selection) => selection,
-        None => {
-            // User pressed ESC - cancel
-            return Ok(false);
-        }
+        Some(choice) => choice,
+        None => return Ok(false),
     };
 
-    let branch = match branch_selection {
-        0 => None, // Use current branch
-        1 => {
-            // Select from existing branches
-            let branches = manager.list_branches()?;
-            if branches.is_empty() {
-                println!("{}", "No branches found.".yellow());
-                return Ok(false);
-            }
-
-            let selection = match Select::with_theme(&get_theme())
-                .with_prompt("Select branch (ESC to cancel)")
+    let branch = if branch_choice == 1 {
+        // Show existing branches
+        let branches = manager.list_branches()?;
+        if branches.is_empty() {
+            utils::print_warning("No branches found, creating from HEAD");
+            None
+        } else {
+            println!();
+            match Select::with_theme(&get_theme())
+                .with_prompt("Select a branch")
                 .items(&branches)
                 .interact_opt()?
             {
-                Some(selection) => selection,
-                None => {
-                    // User pressed ESC - cancel
-                    return Ok(false);
-                }
-            };
-
-            Some(branches[selection].clone())
+                Some(selection) => Some(branches[selection].clone()),
+                None => return Ok(false),
+            }
         }
-        2 => {
-            // Create new branch - use worktree name as default
-            let input = match input_esc_with_default("New branch name (ESC to cancel)", &name) {
-                Some(input) => input,
-                None => {
-                    // ESC pressed - cancel
-                    return Ok(false);
-                }
-            };
-
-            Some(input)
-        }
-        _ => unreachable!(),
+    } else {
+        None
     };
 
-    utils::print_progress("Creating worktree...");
+    // Show preview
+    println!();
+    println!("{}", "Preview:".bright_white());
+    println!("  {} {}", "Name:".bright_black(), final_name.bright_green());
+    if let Some(branch_name) = &branch {
+        println!("  {} {}", "Branch:".bright_black(), branch_name.yellow());
+    } else {
+        println!("  {} Current HEAD", "From:".bright_black());
+    }
+    println!();
 
-    match manager.create_worktree(&worktree_path, branch.as_deref()) {
-        Ok(worktree_path) => {
+    // Create worktree with progress bar
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message("Creating worktree...");
+    pb.enable_steady_tick(Duration::from_millis(100));
+
+    match manager.create_worktree(&final_name, branch.as_deref()) {
+        Ok(path) => {
+            pb.finish_and_clear();
             utils::print_success(&format!(
-                "Worktree '{}' created successfully!",
-                name.bright_white().bold()
+                "Created worktree '{}' at {}",
+                name.bright_green(),
+                path.display()
             ));
 
             // Execute post-create hooks
@@ -435,16 +614,10 @@ fn create_worktree(manager: &GitWorktreeManager) -> Result<bool> {
                 "post-create",
                 &HookContext {
                     worktree_name: name.clone(),
-                    worktree_path: worktree_path.clone(),
+                    worktree_path: path.clone(),
                 },
             ) {
-                eprintln!("{}: Failed to execute hooks: {}", "Warning".yellow(), e);
-            }
-
-            println!();
-            println!("  {} {}", "Path:".bright_black(), worktree_path.display());
-            if let Some(b) = branch {
-                println!("  {} {}", "Branch:".bright_black(), b.yellow());
+                utils::print_warning(&format!("Hook execution warning: {}", e));
             }
 
             // Ask if user wants to switch to the new worktree
@@ -452,21 +625,13 @@ fn create_worktree(manager: &GitWorktreeManager) -> Result<bool> {
             let switch = Confirm::with_theme(&get_theme())
                 .with_prompt("Switch to the new worktree?")
                 .default(true)
-                .interact()?;
+                .interact_opt()?
+                .unwrap_or(false);
 
             if switch {
-                // Output special marker for shell function to detect
-                // Check if GW_SWITCH_FILE is set (new shell integration)
-                if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
-                    // Write to the file for new shell function
-                    if let Ok(mut file) = std::fs::File::create(&switch_file) {
-                        use std::io::Write;
-                        let _ = writeln!(file, "{}", worktree_path.display());
-                    }
-                } else {
-                    // Fallback to stdout for old shell function
-                    println!("SWITCH_TO:{}", worktree_path.display());
-                }
+                // Switch to the new worktree
+                write_switch_path(&path);
+
                 println!();
                 println!(
                     "{} Switching to worktree '{}'",
@@ -474,60 +639,109 @@ fn create_worktree(manager: &GitWorktreeManager) -> Result<bool> {
                     name.bright_white().bold()
                 );
 
-                // Execute post-switch hooks if configured
+                // Execute post-switch hooks
                 if let Err(e) = hooks::execute_hooks(
                     "post-switch",
                     &HookContext {
                         worktree_name: name,
-                        worktree_path,
+                        worktree_path: path,
                     },
                 ) {
-                    eprintln!("{}: Failed to execute hooks: {}", "Warning".yellow(), e);
+                    utils::print_warning(&format!("Hook execution warning: {}", e));
                 }
 
-                // Exit after switch to allow shell to update directory
-                return Ok(true);
+                Ok(true) // Indicate that we switched
+            } else {
+                println!();
+                press_any_key_to_continue()?;
+                Ok(false)
             }
         }
         Err(e) => {
+            pb.finish_and_clear();
             utils::print_error(&format!("Failed to create worktree: {}", e));
+            println!();
+            press_any_key_to_continue()?;
+            Ok(false)
         }
     }
-
-    Ok(false)
 }
 
-fn delete_worktree(manager: &GitWorktreeManager) -> Result<()> {
+/// Deletes a single worktree interactively
+///
+/// Presents a list of deletable worktrees (excluding the current one)
+/// and guides the user through the deletion process:
+///
+/// 1. **Selection**: Choose a worktree from the list
+/// 2. **Branch Check**: If the branch is unique to this worktree, offers to delete it
+/// 3. **Confirmation**: Shows worktree details and confirms deletion
+/// 4. **Pre-remove Hooks**: Executes any configured pre-remove hooks
+/// 5. **Deletion**: Removes the worktree and optionally its branch
+///
+/// # Safety
+///
+/// - Cannot delete the current worktree
+/// - Requires explicit confirmation
+/// - Shows all relevant information before deletion
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful completion (including cancellation).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Git repository operations fail
+/// - File system operations fail during deletion
+pub fn delete_worktree() -> Result<()> {
+    let manager = GitWorktreeManager::new()?;
+    delete_worktree_internal(&manager)
+}
+
+/// Internal implementation of delete_worktree
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Deletion Process
+///
+/// 1. Filters out current worktree (cannot be deleted)
+/// 2. Presents selection list to user
+/// 3. Checks if branch is unique to the worktree
+/// 4. Confirms deletion with detailed preview
+/// 5. Executes pre-remove hooks
+/// 6. Performs deletion of worktree and optionally branch
+fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
         println!();
         println!("{}", "• No worktrees to delete.".yellow());
         println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
-        println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
-    let deletable_worktrees: Vec<_> = worktrees.iter().filter(|w| !w.is_current).collect();
+    // Filter out current worktree
+    let deletable_worktrees: Vec<&WorktreeInfo> =
+        worktrees.iter().filter(|w| !w.is_current).collect();
 
     if deletable_worktrees.is_empty() {
         println!();
+        println!("{}", "• No worktrees available for deletion.".yellow());
         println!(
             "{}",
-            "No deletable worktrees (cannot delete current worktree).".yellow()
+            "  (Cannot delete the current worktree)".bright_black()
         );
         println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
+
+    println!();
+    println!("{}", section_header("Delete Worktree"));
+    println!();
 
     let items: Vec<String> = deletable_worktrees
         .iter()
@@ -535,115 +749,178 @@ fn delete_worktree(manager: &GitWorktreeManager) -> Result<()> {
         .collect();
 
     let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select worktree to delete (ESC to cancel)")
+        .with_prompt("Select a worktree to delete (ESC to cancel)")
         .items(&items)
         .interact_opt()?
     {
         Some(selection) => selection,
-        None => {
-            // User pressed ESC - cancel
-            return Ok(());
-        }
+        None => return Ok(()),
     };
 
-    let worktree = deletable_worktrees[selection];
+    let worktree_to_delete = deletable_worktrees[selection];
 
-    let confirm = match Confirm::with_theme(&get_theme())
-        .with_prompt(format!(
-            "Are you sure you want to delete '{}'?",
-            worktree.name.bright_red()
-        ))
-        .default(false)
-        .interact()
-    {
-        Ok(confirm) => confirm,
-        Err(_) => {
-            // Operation cancelled - return silently
-            return Ok(());
-        }
-    };
+    // Show confirmation with details
+    println!();
+    println!("{}", "⚠ Warning".red().bold());
+    println!(
+        "  {} {}",
+        "Name:".bright_white(),
+        worktree_to_delete.name.yellow()
+    );
+    println!(
+        "  {} {}",
+        "Path:".bright_white(),
+        worktree_to_delete.path.display()
+    );
+    println!(
+        "  {} {}",
+        "Branch:".bright_white(),
+        worktree_to_delete.branch.yellow()
+    );
+    println!();
 
-    if confirm {
-        // Ask if user wants to delete the branch too
-        let delete_branch = Confirm::with_theme(&get_theme())
-            .with_prompt(format!(
-                "Also delete the branch '{}'?",
-                worktree.branch.yellow()
-            ))
+    // Ask about branch deletion if it's unique to this worktree
+    let mut delete_branch = false;
+    if manager.is_branch_unique_to_worktree(&worktree_to_delete.branch, &worktree_to_delete.name)? {
+        println!("{}", "This branch is only used by this worktree.".yellow());
+        delete_branch = Confirm::with_theme(&get_theme())
+            .with_prompt("Also delete the branch?")
             .default(false)
-            .interact()
+            .interact_opt()?
             .unwrap_or(false);
+        println!();
+    }
 
-        // Execute pre-remove hooks
-        if let Err(e) = hooks::execute_hooks(
-            "pre-remove",
-            &HookContext {
-                worktree_name: worktree.name.clone(),
-                worktree_path: worktree.path.clone(),
-            },
-        ) {
-            eprintln!("{}: Failed to execute hooks: {}", "Warning".yellow(), e);
-        }
+    let confirm = Confirm::with_theme(&get_theme())
+        .with_prompt("Are you sure you want to delete this worktree?")
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false);
 
-        utils::print_progress("Removing worktree...");
+    if !confirm {
+        return Ok(());
+    }
 
-        let branch_to_delete = delete_branch.then(|| worktree.branch.clone());
+    // Execute pre-remove hooks
+    if let Err(e) = hooks::execute_hooks(
+        "pre-remove",
+        &HookContext {
+            worktree_name: worktree_to_delete.name.clone(),
+            worktree_path: worktree_to_delete.path.clone(),
+        },
+    ) {
+        utils::print_warning(&format!("Hook execution warning: {}", e));
+    }
 
-        match manager.remove_worktree(&worktree.name) {
-            Ok(_) => {
-                utils::print_success(&format!(
-                    "Worktree '{}' deleted successfully!",
-                    worktree.name.bright_white().bold()
-                ));
+    // Delete the worktree
+    match manager.remove_worktree(&worktree_to_delete.name) {
+        Ok(_) => {
+            utils::print_success(&format!(
+                "Deleted worktree '{}'",
+                worktree_to_delete.name.bright_red()
+            ));
 
-                // Delete branch if requested
-                if let Some(branch) = branch_to_delete {
-                    utils::print_progress(&format!("Deleting branch '{}'...", branch));
-                    match manager.delete_branch(&branch) {
-                        Ok(_) => {
-                            utils::print_success(&format!(
-                                "Branch '{}' deleted successfully!",
-                                branch.yellow()
-                            ));
-                        }
-                        Err(e) => {
-                            utils::print_error(&format!("Failed to delete branch: {}", e));
-                        }
+            // Delete branch if requested
+            if delete_branch {
+                match manager.delete_branch(&worktree_to_delete.branch) {
+                    Ok(_) => {
+                        utils::print_success(&format!(
+                            "Deleted branch '{}'",
+                            worktree_to_delete.branch.bright_red()
+                        ));
+                    }
+                    Err(e) => {
+                        utils::print_error(&format!("Failed to delete branch: {}", e));
                     }
                 }
             }
-            Err(e) => {
-                utils::print_error(&format!("Failed to delete worktree: {}", e));
-            }
+        }
+        Err(e) => {
+            utils::print_error(&format!("Failed to delete worktree: {}", e));
         }
     }
+
+    println!();
+    press_any_key_to_continue()?;
 
     Ok(())
 }
 
-fn switch_worktree(manager: &GitWorktreeManager) -> Result<bool> {
+/// Switches to a different worktree
+///
+/// Displays a list of all worktrees with the current one marked,
+/// allowing the user to select and switch to a different worktree.
+///
+/// # Switching Process
+///
+/// 1. Shows all worktrees (current one marked)
+/// 2. User selects target worktree
+/// 3. Writes target path for shell integration
+/// 4. Executes post-switch hooks
+///
+/// # Shell Integration
+///
+/// The actual directory change is handled by the shell wrapper.
+/// This function writes the target path to either:
+/// - File specified by `GW_SWITCH_FILE` environment variable
+/// - Standard output with `SWITCH_TO:` prefix (legacy mode)
+///
+/// # Returns
+///
+/// Returns `true` if the user switched worktrees, `false` otherwise
+/// (includes selecting current worktree or cancellation).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Git repository operations fail
+/// - File write operations fail
+pub fn switch_worktree() -> Result<bool> {
+    let manager = GitWorktreeManager::new()?;
+    switch_worktree_internal(&manager)
+}
+
+/// Internal implementation of switch_worktree
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Returns
+///
+/// Returns `true` if a switch occurred, `false` if cancelled or already in selected worktree
+fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to switch to.".yellow());
+        println!("{}", "• No worktrees available.".yellow());
         println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
-        println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(false);
     }
 
-    let items: Vec<String> = worktrees
+    println!();
+    println!("{}", section_header("Switch Worktree"));
+    println!();
+
+    // Sort worktrees for display (current first)
+    let mut sorted_worktrees = worktrees;
+    sorted_worktrees.sort_by(|a, b| {
+        if a.is_current && !b.is_current {
+            std::cmp::Ordering::Less
+        } else if !a.is_current && b.is_current {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.cmp(&b.name)
+        }
+    });
+
+    let items: Vec<String> = sorted_worktrees
         .iter()
         .map(|w| {
             if w.is_current {
-                format!("{} ({}) {}", w.name, w.branch, "[current]".bright_green())
+                format!("{} ({}) [current]", w.name, w.branch)
             } else {
                 format!("{} ({})", w.name, w.branch)
             }
@@ -651,722 +928,789 @@ fn switch_worktree(manager: &GitWorktreeManager) -> Result<bool> {
         .collect();
 
     let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select worktree to switch to (ESC to cancel)")
+        .with_prompt("Select a worktree to switch to (ESC to cancel)")
         .items(&items)
         .interact_opt()?
     {
         Some(selection) => selection,
-        None => {
-            // User pressed ESC - cancel
-            return Ok(false);
-        }
+        None => return Ok(false),
     };
 
-    let worktree = &worktrees[selection];
+    let selected_worktree = &sorted_worktrees[selection];
 
-    if worktree.is_current {
+    if selected_worktree.is_current {
+        println!();
         println!("{}", "• Already in this worktree.".yellow());
+        println!();
+        press_any_key_to_continue()?;
         return Ok(false);
     }
 
-    // Output special marker for shell function to detect
-    if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
-        // New method: write to file
-        if let Err(e) = std::fs::write(&switch_file, worktree.path.display().to_string()) {
-            eprintln!("Warning: Failed to write switch file: {}", e);
-        }
-    } else {
-        // Legacy method: output to stdout
-        println!("SWITCH_TO:{}", worktree.path.display());
-    }
+    // Switch to the selected worktree
+    write_switch_path(&selected_worktree.path);
 
     println!();
     println!(
         "{} Switching to worktree '{}'",
         "+".green(),
-        worktree.name.bright_white().bold()
+        selected_worktree.name.bright_white().bold()
     );
-    println!("  {} {}", "Path:".bright_black(), worktree.path.display());
+    println!(
+        "  {} {}",
+        "Path:".bright_black(),
+        selected_worktree.path.display()
+    );
     println!(
         "  {} {}",
         "Branch:".bright_black(),
-        worktree.branch.yellow()
+        selected_worktree.branch.yellow()
     );
 
     // Execute post-switch hooks
     if let Err(e) = hooks::execute_hooks(
         "post-switch",
         &HookContext {
-            worktree_name: worktree.name.clone(),
-            worktree_path: worktree.path.clone(),
+            worktree_name: selected_worktree.name.clone(),
+            worktree_path: selected_worktree.path.clone(),
         },
     ) {
-        eprintln!("{}: Failed to execute hooks: {}", "Warning".yellow(), e);
+        utils::print_warning(&format!("Hook execution warning: {}", e));
     }
 
-    // Return true to indicate we should exit after switch
     Ok(true)
 }
 
-fn search_worktrees(manager: &GitWorktreeManager) -> Result<bool> {
-    let worktrees = manager.list_worktrees()?;
-
-    if worktrees.is_empty() {
-        println!();
-        println!("{}", "• No worktrees found.".yellow());
-        println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
-        println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
-        return Ok(false);
-    }
-
-    // Use custom input that supports ESC
-    let query = match input_esc("Search query (ESC to cancel)") {
-        Some(q) => q,
-        None => {
-            // ESC pressed - cancel search
-            return Ok(false);
-        }
-    };
-
-    if query.is_empty() {
-        // Search cancelled - return silently
-        return Ok(false);
-    }
-
-    // Fuzzy search
-    let matcher = SkimMatcherV2::default();
-    let mut matches: Vec<(usize, i64, &WorktreeInfo)> = worktrees
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, wt)| {
-            // Search in name and branch
-            let name_score = matcher.fuzzy_match(&wt.name, &query).unwrap_or(0);
-            let branch_score = matcher.fuzzy_match(&wt.branch, &query).unwrap_or(0);
-            let best_score = name_score.max(branch_score);
-
-            if best_score > 0 {
-                Some((idx, best_score, wt))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Sort by score (highest first)
-    matches.sort_by(|a, b| b.1.cmp(&a.1));
-
-    if matches.is_empty() {
-        println!("{}", "No matches found.".yellow());
-        return Ok(false);
-    }
-
-    println!();
-    println!(
-        "{} {} {}",
-        "Found".green().bold(),
-        matches.len().to_string().bright_white().bold(),
-        if matches.len() == 1 {
-            "match:"
-        } else {
-            "matches:"
-        }
-    );
-    println!();
-
-    // Display search results
-    for (_, score, wt) in &matches {
-        let icon = get_worktree_icon(wt.is_current);
-
-        println!(
-            "  {} {} - {} {}",
-            icon,
-            wt.name.bright_white().bold(),
-            wt.path.display().to_string().bright_black(),
-            format!("[score: {}]", score).bright_black()
-        );
-
-        let branch_label = format_branch_label(&wt.branch, wt.is_current);
-
-        println!("    {}", branch_label);
-    }
-
-    println!();
-
-    // Ask if user wants to switch to a result
-    if matches.len() == 1 {
-        let confirm = Confirm::with_theme(&get_theme())
-            .with_prompt("Switch to this worktree?")
-            .default(true)
-            .interact();
-
-        if confirm.unwrap_or(false) {
-            let worktree = matches[0].2;
-            if !worktree.is_current {
-                // Output special marker for shell function
-                if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
-                    // New method: write to file
-                    if let Err(e) =
-                        std::fs::write(&switch_file, worktree.path.display().to_string())
-                    {
-                        eprintln!("Warning: Failed to write switch file: {}", e);
-                    }
-                } else {
-                    // Legacy method: output to stdout
-                    println!("SWITCH_TO:{}", worktree.path.display());
-                }
-                println!();
-                println!(
-                    "{} Switching to worktree '{}'",
-                    "+".green(),
-                    worktree.name.bright_white().bold()
-                );
-                println!("  {} {}", "Path:".bright_black(), worktree.path.display());
-                return Ok(true);
-            }
-        }
-    } else {
-        // Multiple results - let user select
-        let items: Vec<String> = matches
-            .iter()
-            .map(|(_, _, wt)| format!("{} ({})", wt.name, wt.branch))
-            .collect();
-
-        let selection = match Select::with_theme(&get_theme())
-            .with_prompt("Select worktree to switch to (ESC to cancel)")
-            .items(&items)
-            .interact_opt()?
-        {
-            Some(selection) => selection,
-            None => {
-                // User pressed ESC - cancel
-                return Ok(false);
-            }
-        };
-
-        if selection < matches.len() {
-            let worktree = matches[selection].2;
-            if !worktree.is_current {
-                // Output special marker for shell function
-                if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
-                    // New method: write to file
-                    if let Err(e) =
-                        std::fs::write(&switch_file, worktree.path.display().to_string())
-                    {
-                        eprintln!("Warning: Failed to write switch file: {}", e);
-                    }
-                } else {
-                    // Legacy method: output to stdout
-                    println!("SWITCH_TO:{}", worktree.path.display());
-                }
-                println!();
-                println!(
-                    "{} Switching to worktree '{}'",
-                    "+".green(),
-                    worktree.name.bright_white().bold()
-                );
-                println!("  {} {}", "Path:".bright_black(), worktree.path.display());
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
+/// Batch deletes multiple worktrees with optional branch cleanup
+///
+/// Provides a multi-select interface for deleting multiple worktrees
+/// in a single operation. This is useful for cleaning up multiple
+/// feature branches or experimental worktrees. The function automatically
+/// detects branches that would become orphaned and offers to delete them.
+///
+/// # Selection Interface
+///
+/// - Space: Toggle selection on current item
+/// - Enter: Confirm and proceed with deletion
+/// - ESC: Cancel operation
+///
+/// # Deletion Process
+///
+/// 1. **Multi-select**: Choose multiple worktrees (current excluded)
+/// 2. **Branch Analysis**: Identifies branches unique to selected worktrees
+/// 3. **Summary**: Shows selected worktrees and orphaned branches
+/// 4. **Confirmation**: Confirms worktree deletion
+/// 5. **Branch Confirmation**: If orphaned branches exist, asks to delete them
+/// 6. **Batch Execution**: Deletes worktrees and optionally their branches
+///
+/// # Branch Management
+///
+/// - Uses `is_branch_unique_to_worktree` to identify orphaned branches
+/// - Lists orphaned branches separately in the summary
+/// - Only deletes branches for successfully deleted worktrees
+/// - Reports branch deletion results separately
+///
+/// # Safety
+///
+/// - Cannot select/delete the current worktree
+/// - Shows comprehensive summary before deletion
+/// - Separate confirmations for worktrees and branches
+/// - Executes pre-remove hooks for each worktree
+/// - Continues with remaining deletions if one fails
+///
+/// # Returns
+///
+/// Returns `Ok(())` on completion. Individual deletion failures are
+/// reported but don't stop the batch operation.
+///
+/// # Errors
+///
+/// Returns an error only if the operation cannot start (e.g., repository access fails).
+pub fn batch_delete_worktrees() -> Result<()> {
+    let manager = GitWorktreeManager::new()?;
+    batch_delete_worktrees_internal(&manager)
 }
 
-fn batch_delete_worktrees(manager: &GitWorktreeManager) -> Result<()> {
+/// Internal implementation of batch_delete_worktrees
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Implementation Details
+///
+/// - Identifies orphaned branches before deletion
+/// - Processes deletions sequentially to avoid conflicts
+/// - Tracks success/failure count for both worktrees and branches
+/// - Each deletion is independent (failures don't affect others)
+/// - Branch deletions only occur for successfully deleted worktrees
+fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees found.".yellow());
+        println!("{}", "• No worktrees to delete.".yellow());
         println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
-        println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
-    let deletable_worktrees: Vec<_> = worktrees.iter().filter(|w| !w.is_current).collect();
+    // Filter out current worktree
+    let deletable_worktrees: Vec<&WorktreeInfo> =
+        worktrees.iter().filter(|w| !w.is_current).collect();
 
     if deletable_worktrees.is_empty() {
         println!();
+        println!("{}", "• No worktrees available for deletion.".yellow());
         println!(
             "{}",
-            "No deletable worktrees (cannot delete current worktree).".yellow()
+            "  (Cannot delete the current worktree)".bright_black()
         );
         println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
     let items: Vec<String> = deletable_worktrees
         .iter()
-        .map(|w| {
-            format!(
-                "{} ({}) - {}",
-                w.name,
-                w.branch,
-                if w.has_changes { "● Modified" } else { "" }
-            )
-        })
+        .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
-
-    let selections = match MultiSelect::with_theme(&get_theme())
-        .with_prompt(
-            "Select worktrees to delete (Space to select, Enter to confirm, ESC to cancel)",
-        )
-        .items(&items)
-        .interact_opt()?
-    {
-        Some(s) => s,
-        None => {
-            // User pressed ESC - cancel
-            return Ok(());
-        }
-    };
-
-    if selections.is_empty() {
-        println!("{}", "No worktrees selected.".yellow());
-        return Ok(());
-    }
-
-    let selected_worktrees: Vec<_> = selections.iter().map(|&i| deletable_worktrees[i]).collect();
-
-    println!();
-    println!("{}", "Selected worktrees for deletion:".red().bold());
-    for wt in &selected_worktrees {
-        println!("  • {} ({})", wt.name.bright_white(), wt.branch.yellow());
-    }
-    println!();
-
-    let confirm = match Confirm::with_theme(&get_theme())
-        .with_prompt(format!("Delete {} worktrees?", selected_worktrees.len()))
-        .default(false)
-        .interact()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            // Operation cancelled - return silently
-            return Ok(());
-        }
-    };
-
-    if confirm {
-        // Ask if user wants to delete branches too
-        let delete_branches = Confirm::with_theme(&get_theme())
-            .with_prompt("Also delete the associated branches?")
-            .default(false)
-            .interact()
-            .unwrap_or(false);
-
-        let pb = ProgressBar::new(selected_worktrees.len() as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-
-        let mut success_count = 0;
-        let mut failed_count = 0;
-        let mut branches_to_delete = Vec::new();
-
-        for wt in selected_worktrees {
-            pb.set_message(format!("Deleting {}...", wt.name));
-
-            // Execute pre-remove hooks
-            if let Err(e) = hooks::execute_hooks(
-                "pre-remove",
-                &HookContext {
-                    worktree_name: wt.name.clone(),
-                    worktree_path: wt.path.clone(),
-                },
-            ) {
-                eprintln!(
-                    "{}: Failed to execute hooks for {}: {}",
-                    "Warning".yellow(),
-                    wt.name,
-                    e
-                );
-            }
-
-            match manager.remove_worktree(&wt.name) {
-                Ok(_) => {
-                    success_count += 1;
-                    pb.inc(1);
-
-                    // Store branch for later deletion if requested
-                    if delete_branches {
-                        branches_to_delete.push(wt.branch.clone());
-                    }
-                }
-                Err(e) => {
-                    failed_count += 1;
-                    eprintln!("{}: Failed to delete {}: {}", "Error".red(), wt.name, e);
-                    pb.inc(1);
-                }
-            }
-        }
-
-        // プログレスバーを適切に終了
-        pb.finish_and_clear();
-
-        // 結果を表示
-        if success_count > 0 {
-            utils::print_success(&format!(
-                "{} worktree{} deleted successfully!",
-                success_count,
-                if success_count > 1 { "s" } else { "" }
-            ));
-        }
-        if failed_count > 0 {
-            utils::print_error(&format!(
-                "{} worktree{} failed to delete.",
-                failed_count,
-                if failed_count > 1 { "s" } else { "" }
-            ));
-        }
-
-        // Delete branches if requested
-        if delete_branches && !branches_to_delete.is_empty() {
-            println!();
-            println!("{}", "Deleting associated branches...".yellow());
-            let mut branch_success = 0;
-            let mut branch_failed = 0;
-
-            for branch in branches_to_delete {
-                match manager.delete_branch(&branch) {
-                    Ok(_) => {
-                        branch_success += 1;
-                        println!("  {} Branch '{}' deleted", "+".green(), branch.yellow());
-                    }
-                    Err(e) => {
-                        branch_failed += 1;
-                        eprintln!(
-                            "  {} Failed to delete branch '{}': {}",
-                            "✗".red(),
-                            branch.yellow(),
-                            e
-                        );
-                    }
-                }
-            }
-
-            if branch_success > 0 {
-                utils::print_success(&format!(
-                    "{} branch{} deleted successfully!",
-                    branch_success,
-                    if branch_success > 1 { "es" } else { "" }
-                ));
-            }
-            if branch_failed > 0 {
-                utils::print_error(&format!(
-                    "{} branch{} failed to delete.",
-                    branch_failed,
-                    if branch_failed > 1 { "es" } else { "" }
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn cleanup_old_worktrees(manager: &GitWorktreeManager) -> Result<()> {
-    // 分析用スピナーを表示
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.yellow} Analyzing worktrees...")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(100));
-
-    let worktrees = manager.list_worktrees()?;
-
-    // スピナーを適切に終了
-    spinner.finish_and_clear();
-
-    if worktrees.is_empty() {
-        println!("{}", "• No worktrees found.".yellow());
-        return Ok(());
-    }
-
-    // Find worktrees older than 30 days without changes
-    let mut old_worktrees = Vec::new();
-    let _cutoff_days = 30;
-
-    for wt in &worktrees {
-        if wt.is_current {
-            continue;
-        }
-
-        // Check if worktree has no recent commits and no changes
-        if !wt.has_changes {
-            if let Some(_commit) = &wt.last_commit {
-                // Parse the time string and check if it's old
-                // For now, we'll add all non-current worktrees without changes
-                old_worktrees.push(wt);
-            }
-        }
-    }
-
-    if old_worktrees.is_empty() {
-        println!("{}", "No old worktrees found for cleanup.".green());
-        println!(
-            "{}",
-            "All worktrees are either current or have uncommitted changes.".bright_black()
-        );
-        return Ok(());
-    }
 
     println!();
     println!(
-        "{} {}",
-        "Found".yellow(),
-        format!(
-            "{} worktree{} that could be cleaned up:",
-            old_worktrees.len(),
-            if old_worktrees.len() > 1 { "s" } else { "" }
-        )
-        .bright_white()
+        "{}",
+        "Select worktrees to delete (Space to select, Enter to confirm, ESC to cancel)"
+            .bright_cyan()
     );
     println!();
 
-    for wt in &old_worktrees {
-        println!("  • {} ({})", wt.name.bright_white(), wt.branch.yellow());
-        if let Some(commit) = &wt.last_commit {
+    let selections = match MultiSelect::with_theme(&get_theme())
+        .with_prompt("Select worktrees")
+        .items(&items)
+        .interact_opt()?
+    {
+        Some(selections) => selections,
+        None => return Ok(()),
+    };
+
+    if selections.is_empty() {
+        println!();
+        println!("{}", "• No worktrees selected.".yellow());
+        println!();
+        press_any_key_to_continue()?;
+        return Ok(());
+    }
+
+    // Check which branches are unique to selected worktrees
+    let mut branches_to_delete = Vec::new();
+    for &idx in &selections {
+        let wt = deletable_worktrees[idx];
+        if let Ok(is_unique) = manager.is_branch_unique_to_worktree(&wt.branch, &wt.name) {
+            if is_unique {
+                branches_to_delete.push((wt.branch.clone(), wt.name.clone()));
+            }
+        }
+    }
+
+    // Show summary
+    println!();
+    println!("{}", "Selected worktrees for deletion:".bright_white());
+    for &idx in &selections {
+        let wt = deletable_worktrees[idx];
+        println!("  {} {} ({})", "•".red(), wt.name, wt.branch);
+    }
+
+    if !branches_to_delete.is_empty() {
+        println!();
+        println!("{}", "Branches that will become orphaned:".yellow());
+        for (branch, _) in &branches_to_delete {
+            println!("  {} {}", "•".yellow(), branch);
+        }
+    }
+
+    println!();
+
+    let confirm = Confirm::with_theme(&get_theme())
+        .with_prompt(format!("Delete {} worktree(s)?", selections.len()))
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false);
+
+    if !confirm {
+        return Ok(());
+    }
+
+    // Ask about branch deletion if any
+    let delete_branches = if !branches_to_delete.is_empty() {
+        println!();
+        Confirm::with_theme(&get_theme())
+            .with_prompt("Also delete the orphaned branches?")
+            .default(false)
+            .interact_opt()?
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    // Delete selected worktrees
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut deleted_worktrees = Vec::new();
+
+    for &idx in &selections {
+        let wt = deletable_worktrees[idx];
+
+        // Execute pre-remove hooks
+        if let Err(e) = hooks::execute_hooks(
+            "pre-remove",
+            &HookContext {
+                worktree_name: wt.name.clone(),
+                worktree_path: wt.path.clone(),
+            },
+        ) {
+            utils::print_warning(&format!("Hook execution warning: {}", e));
+        }
+
+        match manager.remove_worktree(&wt.name) {
+            Ok(_) => {
+                utils::print_success(&format!("Deleted worktree '{}'", wt.name.bright_red()));
+                deleted_worktrees.push((wt.branch.clone(), wt.name.clone()));
+                success_count += 1;
+            }
+            Err(e) => {
+                utils::print_error(&format!("Failed to delete '{}': {}", wt.name, e));
+                error_count += 1;
+            }
+        }
+    }
+
+    // Delete branches if requested
+    if delete_branches {
+        let mut branch_success = 0;
+        let mut branch_error = 0;
+
+        println!();
+        for (branch, worktree_name) in &branches_to_delete {
+            // Only delete branches for successfully deleted worktrees
+            if deleted_worktrees
+                .iter()
+                .any(|(b, w)| b == branch && w == worktree_name)
+            {
+                match manager.delete_branch(branch) {
+                    Ok(_) => {
+                        utils::print_success(&format!("Deleted branch '{}'", branch.bright_red()));
+                        branch_success += 1;
+                    }
+                    Err(e) => {
+                        utils::print_error(&format!("Failed to delete branch '{}': {}", branch, e));
+                        branch_error += 1;
+                    }
+                }
+            }
+        }
+
+        if branch_success > 0 || branch_error > 0 {
+            println!();
             println!(
-                "    {} {}",
-                "Last commit:".bright_black(),
-                commit.time.bright_black()
+                "{} Deleted {} branch(es), {} failed",
+                "•".bright_green(),
+                branch_success,
+                branch_error
             );
         }
     }
 
     println!();
-    let confirm = match Confirm::with_theme(&get_theme())
-        .with_prompt("Delete these old worktrees?")
-        .default(false)
-        .interact()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            // Operation cancelled - return silently
-            return Ok(());
-        }
-    };
+    println!(
+        "{} Deleted {} worktree(s), {} failed",
+        "•".bright_green(),
+        success_count,
+        error_count
+    );
 
-    if confirm {
-        let pb = ProgressBar::new(old_worktrees.len() as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} Cleaning up... [{bar:40.cyan/blue}] {pos}/{len}")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-
-        let mut cleaned = 0;
-        for wt in old_worktrees {
-            pb.set_message(format!("Removing {}...", wt.name));
-
-            if let Err(e) = hooks::execute_hooks(
-                "pre-remove",
-                &HookContext {
-                    worktree_name: wt.name.clone(),
-                    worktree_path: wt.path.clone(),
-                },
-            ) {
-                eprintln!("{}: Failed to execute hooks: {}", "Warning".yellow(), e);
-            }
-
-            if manager.remove_worktree(&wt.name).is_ok() {
-                cleaned += 1;
-            }
-            pb.inc(1);
-            std::thread::sleep(Duration::from_millis(100)); // Visual feedback
-        }
-
-        // プログレスバーを適切に終了
-        pb.finish_and_clear();
-
-        utils::print_success(&format!(
-            "Cleaned up {} old worktree{}!",
-            cleaned,
-            if cleaned != 1 { "s" } else { "" }
-        ));
-    }
+    println!();
+    press_any_key_to_continue()?;
 
     Ok(())
 }
 
-fn rename_worktree(manager: &GitWorktreeManager) -> Result<()> {
-    println!();
-    println!("{}", "⚠️  Rename function has limitations:".yellow().bold());
-    println!("  • Cannot rename current worktree");
-    println!("  • Worktree will be temporarily unavailable during rename");
-    println!("  • Make sure to commit or stash changes before renaming");
-    println!();
+/// Cleans up old worktrees based on age
+///
+/// **Note**: This feature is currently not implemented and serves as
+/// a placeholder for future functionality.
+///
+/// When implemented, this function will:
+/// - Identify worktrees older than a specified number of days
+/// - Show a preview of worktrees to be deleted
+/// - Allow batch deletion of old worktrees
+///
+/// # Current Behavior
+///
+/// Displays a message indicating the feature is not yet implemented.
+///
+/// # Returns
+///
+/// Always returns `Ok(())` after displaying the message.
+pub fn cleanup_old_worktrees() -> Result<()> {
+    let manager = GitWorktreeManager::new()?;
+    cleanup_old_worktrees_internal(&manager)
+}
 
+/// Internal implementation of cleanup_old_worktrees
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Future Implementation
+///
+/// Will require:
+/// - Tracking worktree creation dates (possibly in .git-workers.toml)
+/// - Age calculation logic
+/// - Preview and confirmation UI
+fn cleanup_old_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees found.".yellow());
+        println!("{}", "• No worktrees to clean up.".yellow());
         println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
-        println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
-    // Filter out current worktree (cannot rename current)
-    let renameable_worktrees: Vec<_> = worktrees.iter().filter(|w| !w.is_current).collect();
+    println!();
+    println!("{}", section_header("Cleanup Old Worktrees"));
+    println!();
+
+    // Get age threshold
+    let _days = match input_esc_with_default("Delete worktrees older than (days)", "30") {
+        Some(days_str) => match days_str.parse::<u64>() {
+            Ok(d) => d,
+            Err(_) => {
+                utils::print_error("Invalid number");
+                return Ok(());
+            }
+        },
+        None => return Ok(()),
+    };
+
+    // Find old worktrees (mock implementation - would need actual age tracking)
+    println!();
+    utils::print_warning("Age-based cleanup is not yet implemented.");
+    println!(
+        "{}",
+        "This feature requires tracking worktree creation dates.".bright_black()
+    );
+
+    println!();
+    press_any_key_to_continue()?;
+
+    Ok(())
+}
+
+/// Renames an existing worktree
+///
+/// Provides functionality to rename a worktree and optionally its
+/// associated branch. This is useful when refactoring feature names
+/// or reorganizing worktrees.
+///
+/// # Rename Process
+///
+/// 1. **Selection**: Choose a worktree to rename (current excluded)
+/// 2. **New Name**: Enter the new name for the worktree
+/// 3. **Branch Rename**: If branch name matches worktree name, offers to rename it
+/// 4. **Preview**: Shows before/after comparison
+/// 5. **Execution**: Renames worktree directory and updates Git metadata
+///
+/// # Branch Renaming Logic
+///
+/// The branch is offered for renaming if:
+/// - Branch name equals worktree name
+/// - Branch name equals `feature/{worktree-name}`
+///
+/// # Limitations
+///
+/// - Cannot rename the current worktree
+/// - Cannot rename worktrees with detached HEAD
+/// - New name must be unique
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful completion or cancellation.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - File system operations fail
+/// - Git metadata update fails
+/// - New name conflicts with existing worktree
+pub fn rename_worktree() -> Result<()> {
+    let manager = GitWorktreeManager::new()?;
+    rename_worktree_internal(&manager)
+}
+
+/// Internal implementation of rename_worktree
+///
+/// # Arguments
+///
+/// * `manager` - Git worktree manager instance
+///
+/// # Implementation Details
+///
+/// - Updates worktree directory name
+/// - Updates .git/worktrees/`<name>` metadata
+/// - Updates gitdir references
+/// - Optionally renames associated branch
+fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
+    let worktrees = manager.list_worktrees()?;
+
+    if worktrees.is_empty() {
+        println!();
+        println!("{}", "• No worktrees to rename.".yellow());
+        println!();
+        press_any_key_to_continue()?;
+        return Ok(());
+    }
+
+    // Filter out current worktree
+    let renameable_worktrees: Vec<&WorktreeInfo> =
+        worktrees.iter().filter(|w| !w.is_current).collect();
 
     if renameable_worktrees.is_empty() {
         println!();
+        println!("{}", "• No worktrees available for renaming.".yellow());
         println!(
             "{}",
-            "No renameable worktrees (cannot rename current worktree).".yellow()
+            "  (Cannot rename the current worktree)".bright_black()
         );
         println!();
-        println!("Press any key to continue...");
-        Term::stdout().read_key()?;
+        press_any_key_to_continue()?;
         return Ok(());
     }
 
-    // Select worktree to rename
+    println!();
+    println!("{}", section_header("Rename Worktree"));
+    println!();
+
     let items: Vec<String> = renameable_worktrees
         .iter()
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
 
     let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select worktree to rename (ESC to cancel)")
+        .with_prompt("Select a worktree to rename (ESC to cancel)")
         .items(&items)
         .interact_opt()?
     {
         Some(selection) => selection,
-        None => {
-            // User pressed ESC - cancel
-            return Ok(());
-        }
+        None => return Ok(()),
     };
 
-    let selected_worktree = renameable_worktrees[selection];
-    let old_name = &selected_worktree.name;
+    let worktree = renameable_worktrees[selection];
 
     // Get new name
-    let new_name = match input_esc(&format!("New name for '{}' (ESC to cancel)", old_name)) {
-        Some(name) => name,
-        None => {
-            // ESC pressed - cancel
-            return Ok(());
-        }
-    };
+    println!();
+    let new_name =
+        match input_esc(format!("New name for '{}' (ESC to cancel)", worktree.name).as_str()) {
+            Some(name) => name.trim().to_string(),
+            None => return Ok(()),
+        };
 
-    // Validate the input
-    if new_name.contains(char::is_whitespace) {
-        utils::print_error(
-            "Worktree name cannot contain spaces. Use hyphens or underscores instead.",
-        );
+    if new_name.is_empty() {
+        utils::print_error("Name cannot be empty");
         return Ok(());
     }
 
-    if new_name == *old_name {
-        println!("{}", "New name is the same as current name.".yellow());
+    if new_name == worktree.name {
+        utils::print_warning("New name is the same as the current name");
         return Ok(());
     }
 
-    // Check if new name already exists
-    if worktrees.iter().any(|w| w.name == new_name) {
-        utils::print_error(&format!("Worktree '{}' already exists", new_name));
-        return Ok(());
-    }
-
-    // Confirm the operation
-    let confirm = match Confirm::with_theme(&get_theme())
-        .with_prompt(format!(
-            "Rename '{}' to '{}'?",
-            old_name.bright_blue(),
-            new_name.bright_green()
-        ))
-        .default(false)
-        .interact()
+    // Check if the worktree has a branch that could be renamed
+    let rename_branch = if worktree.branch != "detached"
+        && worktree.branch != "unknown"
+        && (worktree.branch == worktree.name
+            || worktree.branch == format!("feature/{}", worktree.name))
     {
-        Ok(confirm) => confirm,
-        Err(_) => {
-            // Operation cancelled - return silently
-            return Ok(());
-        }
+        println!();
+        Confirm::with_theme(&get_theme())
+            .with_prompt("Also rename the associated branch?")
+            .default(true)
+            .interact_opt()?
+            .unwrap_or(false)
+    } else {
+        false
     };
 
-    if confirm {
-        utils::print_progress(&format!("Renaming '{}' to '{}'...", old_name, new_name));
+    // Show preview
+    println!();
+    println!("{}", "Preview:".bright_white());
+    println!(
+        "  {} {} → {}",
+        "Worktree:".bright_white(),
+        worktree.name,
+        new_name.bright_green()
+    );
 
-        match manager.rename_worktree(old_name, &new_name) {
-            Ok(new_path) => {
-                utils::print_success(&format!(
-                    "Worktree renamed successfully!\n  {} {} → {}\n  {} {}",
-                    "From:".bright_black(),
-                    old_name.bright_blue(),
-                    new_name.bright_green().bold(),
-                    "Path:".bright_black(),
-                    new_path.display()
-                ));
-            }
-            Err(e) => {
-                utils::print_error(&format!("Failed to rename worktree: {}", e));
+    let new_path = worktree.path.parent().unwrap().join(&new_name);
+    println!(
+        "  {} {} → {}",
+        "Path:".bright_white(),
+        worktree.path.display(),
+        new_path.display().to_string().bright_green()
+    );
+
+    if rename_branch {
+        let new_branch = if worktree.branch.starts_with("feature/") {
+            format!("feature/{}", new_name)
+        } else {
+            new_name.clone()
+        };
+        println!(
+            "  {} {} → {}",
+            "Branch:".bright_white(),
+            worktree.branch,
+            new_branch.bright_green()
+        );
+    }
+
+    println!();
+    let confirm = Confirm::with_theme(&get_theme())
+        .with_prompt("Proceed with rename?")
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false);
+
+    if !confirm {
+        return Ok(());
+    }
+
+    // Perform the rename
+    utils::print_progress(&format!("Renaming worktree to '{}'...", new_name));
+
+    match manager.rename_worktree(&worktree.name, &new_name) {
+        Ok(_) => {
+            utils::print_success(&format!(
+                "Worktree renamed from '{}' to '{}'!",
+                worktree.name.yellow(),
+                new_name.bright_green()
+            ));
+
+            // Rename branch if requested
+            if rename_branch {
+                let new_branch = if worktree.branch.starts_with("feature/") {
+                    format!("feature/{}", new_name)
+                } else {
+                    new_name.clone()
+                };
+
+                utils::print_progress(&format!("Renaming branch to '{}'...", new_branch));
+
+                match manager.rename_branch(&worktree.branch, &new_branch) {
+                    Ok(_) => {
+                        utils::print_success(&format!(
+                            "Branch renamed from '{}' to '{}'!",
+                            worktree.branch.yellow(),
+                            new_branch.bright_green()
+                        ));
+                    }
+                    Err(e) => {
+                        utils::print_error(&format!("Failed to rename branch: {}", e));
+                    }
+                }
             }
         }
+        Err(e) => {
+            utils::print_error(&format!("Failed to rename worktree: {}", e));
+        }
     }
+
+    println!();
+    press_any_key_to_continue()?;
 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
+/// Edits the hooks configuration file
+///
+/// Opens the `.git-workers.toml` configuration file in the user's
+/// preferred editor, allowing them to configure lifecycle hooks.
+///
+/// # Configuration File Location
+///
+/// The function searches for the configuration file in the following order:
+/// 1. Current directory (useful for bare repo worktrees)
+/// 2. Parent directory's main/master worktree (for organized worktree structures)
+/// 3. Repository root (for standard repos)
+///
+/// This flexible lookup strategy ensures hooks work correctly in both
+/// regular and bare repositories, while maintaining consistency across
+/// all worktrees in a project.
+///
+/// # Editor Selection
+///
+/// Uses the following priority for editor selection:
+/// 1. `EDITOR` environment variable
+/// 2. `VISUAL` environment variable
+/// 3. Platform default (vi on Unix, notepad on Windows)
+///
+/// # File Creation
+///
+/// If the configuration file doesn't exist, offers to create it
+/// with a template containing example hooks for all lifecycle events.
+///
+/// # Template
+///
+/// The generated template includes:
+/// - Repository URL configuration (optional)
+/// - Post-create hooks example
+/// - Pre-remove hooks example
+/// - Post-switch hooks example
+/// - Documentation for template variables
+///
+/// # Returns
+///
+/// Returns `Ok(())` after editing is complete or cancelled.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Not in a Git repository
+/// - Cannot determine configuration file location
+/// - Editor fails to launch
+pub fn edit_hooks() -> Result<()> {
+    use std::process::Command;
 
-    #[test]
-    fn test_input_validation() {
-        let input_with_spaces = "test name";
-        assert!(input_with_spaces.contains(char::is_whitespace));
+    println!();
+    println!("{}", section_header("Edit Hooks Configuration"));
+    println!();
 
-        let input_without_spaces = "testname";
-        assert!(!input_without_spaces.contains(char::is_whitespace));
+    // Find the config file location
+    let config_path = if let Ok(repo) = git2::Repository::discover(".") {
+        // Try a simpler approach: look for main/master in parent directory
+        if let Ok(cwd) = std::env::current_dir() {
+            // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
+            if let Some(parent) = cwd.parent() {
+                // Look for main or master directories in the parent
+                let main_path = parent.join("main").join(".git-workers.toml");
+                let master_path = parent.join("master").join(".git-workers.toml");
+
+                if main_path.exists() {
+                    main_path
+                } else if master_path.exists() {
+                    master_path
+                } else {
+                    // For regular repositories, use workdir
+                    let workdir = repo
+                        .workdir()
+                        .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
+                    workdir.join(".git-workers.toml")
+                }
+            } else {
+                // No parent directory, use workdir
+                let workdir = repo
+                    .workdir()
+                    .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
+                workdir.join(".git-workers.toml")
+            }
+        } else {
+            // Can't get current directory, use workdir
+            let workdir = repo
+                .workdir()
+                .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
+            workdir.join(".git-workers.toml")
+        }
+    } else {
+        utils::print_error("Not in a git repository");
+        println!();
+        press_any_key_to_continue()?;
+        return Ok(());
+    };
+
+    // Create the file if it doesn't exist
+    if !config_path.exists() {
+        println!("{}", "• No configuration file found.".yellow());
+        println!();
+
+        let create = Confirm::with_theme(&get_theme())
+            .with_prompt("Create .git-workers.toml?")
+            .default(true)
+            .interact_opt()?
+            .unwrap_or(false);
+
+        if create {
+            // Create a template configuration
+            let template = r#"# Git Workers configuration file
+
+[repository]
+# Repository URL for identification (optional)
+# This ensures hooks only run in the intended repository
+# url = "https://github.com/owner/repo.git"
+
+[hooks]
+# Run after creating a new worktree
+post-create = [
+    # "npm install",
+    # "cp .env.example .env"
+]
+
+# Run before removing a worktree
+pre-remove = [
+    # "rm -rf node_modules"
+]
+
+# Run after switching to a worktree
+post-switch = [
+    # "echo 'Switched to {{worktree_name}}'"
+]
+"#;
+
+            std::fs::write(&config_path, template)?;
+            utils::print_success("Created .git-workers.toml with template");
+        } else {
+            return Ok(());
+        }
     }
 
-    #[test]
-    fn test_esc_key_handling_logic() {
-        // ESC キーの処理ロジックをテスト
-        // 実際のユーザー入力をシミュレートすることはできないが、
-        // 処理ロジックの構造をテストできる
+    // Get the user's preferred editor
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| {
+            if cfg!(target_os = "windows") {
+                "notepad".to_string()
+            } else {
+                "vi".to_string()
+            }
+        });
 
-        // 空文字列の場合（ESCまたは空入力）
-        let empty_input = "";
-        assert!(empty_input.trim().is_empty());
+    println!(
+        "{} Opening {} with {}...",
+        "•".bright_blue(),
+        config_path.display().to_string().bright_white(),
+        editor.bright_yellow()
+    );
+    println!();
 
-        // 有効な入力の場合
-        let valid_input = "test-worktree";
-        assert!(!valid_input.trim().is_empty());
-        assert!(!valid_input.contains(char::is_whitespace));
+    // Open the editor
+    let status = Command::new(&editor).arg(&config_path).status();
+
+    match status {
+        Ok(status) if status.success() => {
+            utils::print_success("Configuration file edited successfully");
+        }
+        Ok(_) => {
+            utils::print_warning("Editor exited with non-zero status");
+        }
+        Err(e) => {
+            utils::print_error(&format!("Failed to open editor: {}", e));
+            println!();
+            println!("You can manually edit the file at:");
+            println!("  {}", config_path.display().to_string().bright_white());
+        }
     }
+
+    println!();
+    press_any_key_to_continue()?;
+
+    Ok(())
 }

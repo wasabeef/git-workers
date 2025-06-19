@@ -32,6 +32,9 @@ cargo test test_name
 
 # Run tests single-threaded (for flaky tests)
 cargo test -- --test-threads=1
+
+# Run tests with output for debugging
+cargo test test_name -- --nocapture
 ```
 
 ### Quality Checks
@@ -46,6 +49,9 @@ cargo clippy --all-features -- -D warnings
 
 # Type check
 cargo check --all-features
+
+# Generate documentation
+cargo doc --no-deps --open
 ```
 
 ### Installation
@@ -75,6 +81,7 @@ src/
 ├── hooks.rs             # Hook system (post-create, pre-remove, etc.)
 ├── repository_info.rs   # Repository information display
 ├── input_esc_raw.rs     # Custom input handling with ESC support
+├── constants.rs         # Centralized constants (strings, formatting)
 └── utils.rs             # Common utilities (error display, etc.)
 ```
 
@@ -107,14 +114,12 @@ post-switch = ["echo 'Switched to {{worktree_name}}'"]
 ```
 
 Template variables:
-
 - `{{worktree_name}}`: The worktree name
 - `{{worktree_path}}`: Absolute path to worktree
 
 ### Worktree Patterns
 
 First worktree creation offers two options:
-
 1. Same level as repository: `../worktree-name`
 2. In subdirectory (recommended): `../repo/worktrees/worktree-name`
 
@@ -123,7 +128,6 @@ Subsequent worktrees follow the established pattern automatically.
 ### ESC Key Handling
 
 All interactive prompts support ESC cancellation through custom `input_esc_raw` module:
-
 - `input_esc_raw()` returns `Option<String>` (None on ESC)
 - `Select::interact_opt()` for menu selections
 - `Confirm::interact_opt()` for confirmations
@@ -131,7 +135,6 @@ All interactive prompts support ESC cancellation through custom `input_esc_raw` 
 ### Worktree Rename Implementation
 
 Since Git lacks native rename functionality:
-
 1. Move directory with `fs::rename`
 2. Update `.git/worktrees/<name>` metadata directory
 3. Update gitdir files in both directions

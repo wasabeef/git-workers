@@ -30,7 +30,14 @@ fn test_execute_all_menu_items() -> Result<()> {
 
     for item in items {
         // These should not panic, even if they return errors due to empty state
-        let result = commands::execute(item);
+        let result = match item {
+            MenuItem::ListWorktrees => commands::list_worktrees(),
+            MenuItem::DeleteWorktree => commands::delete_worktree(),
+            MenuItem::BatchDelete => commands::batch_delete_worktrees(),
+            MenuItem::CleanupOldWorktrees => commands::cleanup_old_worktrees(),
+            MenuItem::RenameWorktree => commands::rename_worktree(),
+            _ => Ok(()),
+        };
         // We don't assert success because these operations may legitimately fail
         // in an empty repository, but they shouldn't panic
         // Success is fine, errors are expected for some operations
@@ -52,8 +59,8 @@ fn test_commands_module_functions() -> Result<()> {
     create_initial_commit(&repo)?;
     std::env::set_current_dir(&repo_path)?;
 
-    // Test that execute function exists and handles invalid states gracefully
-    let result = commands::execute(MenuItem::ListWorktrees);
+    // Test that list_worktrees function exists and handles invalid states gracefully
+    let result = commands::list_worktrees();
     // Should succeed or fail gracefully
     assert!(result.is_ok() || result.is_err());
 
@@ -72,11 +79,12 @@ fn test_menu_item_coverage() {
         MenuItem::CleanupOldWorktrees,
         MenuItem::SwitchWorktree,
         MenuItem::RenameWorktree,
+        MenuItem::EditHooks,
         MenuItem::Exit,
     ];
 
     // Verify we have all expected menu items
-    assert_eq!(all_items.len(), 9);
+    assert_eq!(all_items.len(), 10);
 
     // Test that each item can be formatted
     for item in all_items {

@@ -104,6 +104,63 @@ fn test_worktree_without_subdirectory() -> Result<()> {
 }
 
 #[test]
+fn test_worktree_subdirectory_pattern() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("test-repo");
+
+    let repo = Repository::init(&repo_path)?;
+    create_initial_commit(&repo)?;
+
+    use git_workers::git::GitWorktreeManager;
+    let manager = GitWorktreeManager::new_from_path(&repo_path)?;
+
+    // Create worktree with subdirectory pattern
+    let worktree_path = manager.create_worktree("worktrees/feature", Some("feature"))?;
+
+    // Should be created in worktrees subdirectory within repo
+    assert!(worktree_path.exists());
+    assert_eq!(worktree_path.file_name().unwrap(), "feature");
+
+    // The parent should be "worktrees" directory
+    let parent = worktree_path.parent().unwrap();
+    assert_eq!(parent.file_name().unwrap(), "worktrees");
+
+    // The grandparent should be the repository directory
+    let grandparent = parent.parent().unwrap();
+    assert_eq!(grandparent, repo_path.canonicalize()?);
+
+    Ok(())
+}
+
+#[test]
+fn test_worktree_relative_parent_pattern() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("test-repo");
+
+    let repo = Repository::init(&repo_path)?;
+    create_initial_commit(&repo)?;
+
+    use git_workers::git::GitWorktreeManager;
+    let manager = GitWorktreeManager::new_from_path(&repo_path)?;
+
+    // Create worktree with relative parent pattern
+    let worktree_path = manager.create_worktree("../feature", Some("feature"))?;
+
+    // Should be created at same level as repository
+    assert!(worktree_path.exists());
+    assert_eq!(worktree_path.file_name().unwrap(), "feature");
+
+    // The parent should be the same as repo's parent
+    let worktree_parent = worktree_path.parent().unwrap();
+    let repo_parent = repo_path.parent().unwrap();
+
+    // Compare canonical paths
+    assert_eq!(worktree_parent.canonicalize()?, repo_parent.canonicalize()?);
+
+    Ok(())
+}
+
+#[test]
 fn test_first_worktree_same_level_pattern() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path().join("test-repo");

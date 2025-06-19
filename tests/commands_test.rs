@@ -1,5 +1,5 @@
 use anyhow::Result;
-use git2::Repository;
+use git2::{BranchType, Repository};
 //
 use std::process::Command;
 use tempfile::TempDir;
@@ -164,44 +164,48 @@ fn test_delete_branch_success() -> Result<()> {
     let repo = Repository::init(&repo_path)?;
     create_initial_commit(&repo)?;
 
-    // Create a test branch
-    Command::new("git")
-        .current_dir(&repo_path)
-        .args(["checkout", "-b", "test-branch"])
-        .output()?;
+    // Create and switch to a test branch using git2
+    let obj = repo.revparse_single("HEAD")?;
+    let commit = obj.as_commit().unwrap();
+    repo.branch("test-branch", commit, false)?;
 
-    // Add a commit to test-branch and push it back to main to ensure it's merged
-    std::fs::write(repo_path.join("test.txt"), "test")?;
-    Command::new("git")
-        .current_dir(&repo_path)
-        .args(["add", "test.txt"])
-        .output()?;
-    Command::new("git")
-        .current_dir(&repo_path)
-        .args(["commit", "-m", "Test commit"])
-        .output()?;
+    // Switch back to main/master
+    let head_ref = repo.head()?;
+    let branch_name = head_ref.shorthand().unwrap_or("main");
 
-    Command::new("git")
-        .current_dir(&repo_path)
-        .args(["checkout", "main"])
-        .output()
-        .or_else(|_| {
-            Command::new("git")
-                .current_dir(&repo_path)
-                .args(["checkout", "master"])
-                .output()
-        })?;
-
-    // Merge test-branch to main so it can be deleted
-    Command::new("git")
-        .current_dir(&repo_path)
-        .args(["merge", "test-branch"])
-        .output()?;
+    // Ensure we're not on the branch we want to delete
+    if branch_name == "test-branch" {
+        // Switch to main or master
+        if repo.find_branch("main", BranchType::Local).is_ok() {
+            repo.set_head("refs/heads/main")?;
+        } else if repo.find_branch("master", BranchType::Local).is_ok() {
+            repo.set_head("refs/heads/master")?;
+        }
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))?;
+    }
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
+    // Verify branch exists before deletion
+    let branches_before = manager.list_branches()?;
+    assert!(branches_before.contains(&"test-branch".to_string()));
+
     // Delete the branch
     let result = manager.delete_branch("test-branch");
+    if let Err(e) = &result {
+        eprintln!("Failed to delete branch: {}", e);
+
+        // Check current branch
+        let head = repo.head()?;
+        eprintln!("Current branch: {:?}", head.shorthand());
+
+        // List all branches
+        let branches = repo.branches(None)?;
+        for branch in branches {
+            let (branch, _) = branch?;
+            eprintln!("Branch: {:?}", branch.name()?);
+        }
+    }
     assert!(result.is_ok());
 
     // Verify it's gone

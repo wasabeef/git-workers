@@ -37,12 +37,19 @@ fn test_execute_hooks_without_config() -> Result<()> {
     let repo = Repository::init(&repo_path)?;
     create_initial_commit(&repo)?;
 
+    // Create worktree directory
+    let worktree_path = temp_dir.path().join("test");
+    fs::create_dir(&worktree_path)?;
+
     let context = HookContext {
         worktree_name: "test".to_string(),
-        worktree_path: temp_dir.path().join("test"),
+        worktree_path,
     };
 
-    // Should not fail even without .git-workers.toml
+    // Change to repo directory so config can be found
+    std::env::set_current_dir(&repo_path)?;
+
+    // Should not fail even without .git/git-workers.toml
     let result = execute_hooks("post-create", &context);
     assert!(result.is_ok());
 
@@ -60,18 +67,28 @@ fn test_execute_hooks_with_config() -> Result<()> {
 
     // Create config file with hooks
     let config_content = r#"
+[repository]
+url = "https://github.com/test/repo.git"
+
 [hooks]
 post-create = ["echo 'Worktree created'", "echo 'Setup complete'"]
 pre-remove = ["echo 'Cleaning up'"]
 post-switch = ["echo 'Switched to {{worktree_name}}'"]
 "#;
 
-    fs::write(repo_path.join(".git-workers.toml"), config_content)?;
+    fs::write(repo_path.join(".git/git-workers.toml"), config_content)?;
+
+    // Create worktree directory
+    let worktree_path = temp_dir.path().join("test-worktree");
+    fs::create_dir(&worktree_path)?;
 
     let context = HookContext {
         worktree_name: "test-worktree".to_string(),
-        worktree_path: temp_dir.path().join("test-worktree"),
+        worktree_path,
     };
+
+    // Change to repo directory so config can be found
+    std::env::set_current_dir(&repo_path)?;
 
     // Execute post-create hooks
     let result = execute_hooks("post-create", &context);
@@ -103,12 +120,19 @@ fn test_execute_hooks_with_invalid_config() -> Result<()> {
 
     // Create invalid config file
     let invalid_config = "invalid toml content [[[";
-    fs::write(repo_path.join(".git-workers.toml"), invalid_config)?;
+    fs::write(repo_path.join(".git/git-workers.toml"), invalid_config)?;
+
+    // Create worktree directory
+    let worktree_path = temp_dir.path().join("test");
+    fs::create_dir(&worktree_path)?;
 
     let context = HookContext {
         worktree_name: "test".to_string(),
-        worktree_path: temp_dir.path().join("test"),
+        worktree_path,
     };
+
+    // Change to repo directory so config can be found
+    std::env::set_current_dir(&repo_path)?;
 
     // Should handle invalid config gracefully
     let result = execute_hooks("post-create", &context);
@@ -129,16 +153,26 @@ fn test_execute_hooks_with_empty_hooks() -> Result<()> {
 
     // Create config with empty hooks
     let config_content = r#"
+[repository]
+url = "https://github.com/test/repo.git"
+
 [hooks]
 post-create = []
 "#;
 
-    fs::write(repo_path.join(".git-workers.toml"), config_content)?;
+    fs::write(repo_path.join(".git/git-workers.toml"), config_content)?;
+
+    // Create worktree directory
+    let worktree_path = temp_dir.path().join("test");
+    fs::create_dir(&worktree_path)?;
 
     let context = HookContext {
         worktree_name: "test".to_string(),
-        worktree_path: temp_dir.path().join("test"),
+        worktree_path,
     };
+
+    // Change to repo directory so config can be found
+    std::env::set_current_dir(&repo_path)?;
 
     let result = execute_hooks("post-create", &context);
     assert!(result.is_ok());

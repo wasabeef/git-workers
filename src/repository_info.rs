@@ -1,7 +1,18 @@
 //! Repository information display functionality
 //!
 //! This module provides functions to determine and format repository
-//! information for display in the application header.
+//! information for display in the application header. It intelligently
+//! detects the repository type and current context to provide meaningful
+//! information to the user.
+//!
+//! # Repository Types
+//!
+//! The module handles several repository configurations:
+//! - **Bare repositories**: Repositories without working directories
+//! - **Main worktrees**: The primary working directory with worktrees
+//! - **Worktrees**: Secondary working directories linked to a main repository
+//! - **Standard repositories**: Regular Git repositories without worktrees
+//! - **Non-Git directories**: Fallback for directories outside Git control
 
 use crate::git::GitWorktreeManager;
 use std::env;

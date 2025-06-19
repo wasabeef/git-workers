@@ -31,17 +31,17 @@
 //! ```no_run
 //! use git_workers::git::GitWorktreeManager;
 //! use git_workers::commands;
-//! use git_workers::menu::MenuItem;
 //!
 //! // Create a worktree manager
 //! let manager = GitWorktreeManager::new().expect("Failed to open repository");
 //!
-//! // Execute a command
-//! let result = commands::execute(MenuItem::ListWorktrees);
+//! // List worktrees
+//! let result = commands::list_worktrees();
 //! ```
 
 pub mod commands;
 pub mod config;
+pub mod constants;
 pub mod git;
 pub mod hooks;
 pub mod input_esc_raw;

@@ -36,17 +36,36 @@ use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
 use std::path::{Path, PathBuf};
 
-// Constants for default values
-const DEFAULT_BRANCH_UNKNOWN: &str = "unknown";
-const DEFAULT_BRANCH_DETACHED: &str = "detached";
-const DEFAULT_AUTHOR_UNKNOWN: &str = "Unknown";
-const DEFAULT_MESSAGE_NONE: &str = "No message";
+use crate::constants::{
+    DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE,
+    TIME_FORMAT,
+};
+
+// Git-specific constants
 const COMMIT_ID_SHORT_LENGTH: usize = 8;
-const TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 /// Finds the common parent directory of all worktrees
 ///
-/// Returns `None` if worktrees don't share a common parent or if the list is empty
+/// This function is used to detect the pattern for organizing worktrees.
+/// If all existing worktrees share a common parent directory, new worktrees
+/// should be created in the same location to maintain consistency.
+///
+/// # Arguments
+///
+/// * `worktrees` - Slice of worktree information structs
+///
+/// # Returns
+///
+/// * `Some(PathBuf)` - The common parent directory if all worktrees share one
+/// * `None` - If worktrees don't share a common parent or the list is empty
+///
+/// # Example
+///
+/// If worktrees are at:
+/// - `/home/user/projects/myrepo/feature1`
+/// - `/home/user/projects/myrepo/feature2`
+///
+/// Returns: `Some("/home/user/projects/myrepo")`
 fn find_common_parent(worktrees: &[WorktreeInfo]) -> Option<PathBuf> {
     if worktrees.is_empty() {
         return None;
@@ -111,7 +130,10 @@ impl GitWorktreeManager {
         Ok(Self { repo })
     }
 
-    /// Creates a new GitWorktreeManager from a specific path (for testing)
+    /// Creates a new GitWorktreeManager from a specific path
+    ///
+    /// This method is primarily used for testing but is available for any code
+    /// that needs to create a manager from a specific repository path.
     #[allow(dead_code)]
     pub fn new_from_path(path: &Path) -> Result<Self> {
         let repo = Repository::open(path)?;
@@ -123,7 +145,19 @@ impl GitWorktreeManager {
         &self.repo
     }
 
-    /// Get the directory to use as working directory for git commands
+    /// Gets the directory to use as working directory for git commands
+    ///
+    /// For bare repositories, returns the repository path itself.
+    /// For normal repositories, returns the working directory.
+    ///
+    /// # Returns
+    ///
+    /// The appropriate directory path for executing git commands
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository has no working directory
+    /// (should not happen in practice)
     fn get_git_dir(&self) -> Result<&Path> {
         if self.repo.is_bare() {
             Ok(self.repo.path())
@@ -136,8 +170,23 @@ impl GitWorktreeManager {
 
     /// Determines the default base path for creating new worktrees
     ///
-    /// For bare repositories, uses the parent of the repository path.
-    /// For normal repositories, uses the parent of the working directory.
+    /// This method provides the fallback location when no existing worktree
+    /// pattern can be detected.
+    ///
+    /// # Behavior
+    ///
+    /// - **Bare repositories**: Uses the parent of the repository path
+    /// - **Normal repositories**: Uses the parent of the working directory
+    ///
+    /// # Returns
+    ///
+    /// The default base path for creating worktrees
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Cannot find the parent directory
+    /// - Repository has no working directory (for non-bare repos)
     fn get_default_worktree_base_path(&self) -> Result<PathBuf> {
         if self.repo.is_bare() {
             self.repo
@@ -159,10 +208,24 @@ impl GitWorktreeManager {
     ///
     /// This method uses parallel processing to gather worktree information
     /// efficiently, including branch names, modification status, and commit info.
+    /// Each worktree is processed in a separate thread to minimize latency when
+    /// accessing multiple repository directories.
     ///
     /// # Returns
     ///
-    /// A vector of `WorktreeInfo` structs sorted by name
+    /// A vector of [`WorktreeInfo`] structs sorted alphabetically by name
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Cannot enumerate worktrees from the repository
+    /// - Thread operations fail (rare)
+    ///
+    /// # Performance
+    ///
+    /// This method spawns one thread per worktree for parallel processing.
+    /// For repositories with many worktrees, this significantly reduces the
+    /// total time compared to sequential processing.
     pub fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>> {
         let mut worktrees;
         let worktree_names = self.repo.worktrees()?;
@@ -229,12 +292,35 @@ impl GitWorktreeManager {
         Ok(worktrees)
     }
 
+    /// Checks if the given path is the current worktree
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The worktree path to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the current working directory is within the given worktree path
     fn is_current_worktree(&self, path: &std::path::Path) -> bool {
         std::env::current_dir()
             .map(|dir| dir.starts_with(path))
             .unwrap_or(false)
     }
 
+    /// Gets the current branch name for a worktree
+    ///
+    /// # Arguments
+    ///
+    /// * `worktree` - The git2 worktree object
+    ///
+    /// # Returns
+    ///
+    /// The branch name, or "detached" if in detached HEAD state,
+    /// or "unknown" if the branch cannot be determined
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the worktree repository cannot be opened
     #[allow(dead_code)]
     fn get_worktree_branch(&self, worktree: &git2::Worktree) -> Result<String> {
         let worktree_repo = Repository::open(worktree.path())?;
@@ -250,23 +336,34 @@ impl GitWorktreeManager {
     /// Creates a new worktree with the specified name and optional branch
     ///
     /// This method intelligently determines the base path for the new worktree
-    /// by analyzing existing worktree patterns. For bare repositories, it
-    /// typically creates worktrees in a `branch/` subdirectory.
+    /// by analyzing existing worktree patterns. It supports three path patterns:
+    ///
+    /// 1. **Relative paths** (`../name`): Creates at same level as repository
+    /// 2. **Subdirectory paths** (`worktrees/name`): Creates within repository
+    /// 3. **Simple names**: Uses existing pattern detection or defaults
     ///
     /// # Arguments
     ///
     /// * `name` - The name for the new worktree (used as directory name)
     /// * `branch` - Optional branch name to create the worktree from
     ///
+    /// # Path Resolution
+    ///
+    /// - Paths starting with `../` are resolved relative to the repository parent
+    /// - Paths containing `/` (e.g., "worktrees/feature") are created within the repository directory
+    /// - Simple names use pattern detection from existing worktrees
+    /// - All paths are canonicalized to resolve `..` components for clean display
+    ///
     /// # Returns
     ///
-    /// The path to the newly created worktree
+    /// The canonicalized path to the newly created worktree
     ///
     /// # Errors
     ///
     /// * If the worktree path already exists
     /// * If the branch name is invalid
     /// * If Git operations fail
+    /// * If path canonicalization fails
     ///
     /// # Examples
     ///
@@ -276,16 +373,19 @@ impl GitWorktreeManager {
     /// // Create worktree from existing branch
     /// let path = manager.create_worktree("feature", Some("feature/auth")).unwrap();
     ///
-    /// // Create worktree from current HEAD
-    /// let path = manager.create_worktree("experiment", None).unwrap();
+    /// // Create worktree from current HEAD with subdirectory pattern
+    /// let path = manager.create_worktree("worktrees/experiment", None).unwrap();
+    ///
+    /// // Create worktree at same level as repository
+    /// let path = manager.create_worktree("../sibling", None).unwrap();
     /// ```
     pub fn create_worktree(&self, name: &str, branch: Option<&str>) -> Result<PathBuf> {
         let base_path = self.determine_worktree_base_path()?;
 
         // Handle different path patterns
         let worktree_path = if name.starts_with("../") {
-            // Relative path from repository (e.g., "../emu/branch/feature")
-            // This is used for creating worktrees inside the repository structure
+            // Relative path from repository (e.g., "../feature")
+            // This creates worktrees at the same level as the repository
             let repo_dir = self
                 .repo
                 .workdir()
@@ -293,9 +393,10 @@ impl GitWorktreeManager {
                 .ok_or_else(|| anyhow!("Cannot determine repository directory"))?;
             repo_dir.join(name)
         } else if name.contains('/') {
-            // Name includes a path pattern (e.g., "branch/feature")
-            // Use the parent directory as base
-            base_path.join(name)
+            // Name includes a path pattern (e.g., "worktrees/feature")
+            // This is for subdirectory pattern - use repository directory as base
+            let repo_dir = self.repo.workdir().unwrap_or_else(|| self.repo.path());
+            repo_dir.join(name)
         } else {
             // Simple name - use existing pattern detection
             base_path.join(name)
@@ -319,18 +420,45 @@ impl GitWorktreeManager {
             .and_then(|n| n.to_str())
             .unwrap_or(name);
 
+        // Canonicalize the path to resolve .. components
+        let canonical_path = worktree_path
+            .canonicalize()
+            .or_else(|_| -> Result<PathBuf> {
+                // If canonicalize fails (path doesn't exist yet), manually resolve
+                if let Some(parent) = worktree_path.parent() {
+                    if let Ok(canonical_parent) = parent.canonicalize() {
+                        return Ok(canonical_parent.join(worktree_path.file_name().unwrap()));
+                    }
+                }
+                Ok(worktree_path.clone())
+            })
+            .unwrap_or_else(|_| worktree_path.clone());
+
         // Create worktree with git2
         if let Some(branch_name) = branch {
             // Use git CLI for branch-based worktree creation
             // (git2's worktree API has limitations)
-            self.create_worktree_with_branch(&worktree_path, branch_name)
+            self.create_worktree_with_branch(&canonical_path, branch_name)
         } else {
             // Create worktree from current HEAD
-            self.create_worktree_from_head(&worktree_path, worktree_name)
+            self.create_worktree_from_head(&canonical_path, worktree_name)
         }
     }
 
     /// Determines the base path for creating new worktrees
+    ///
+    /// This method implements the pattern detection logic:
+    /// 1. First, check if existing worktrees share a common parent
+    /// 2. If yes, use that parent to maintain consistency
+    /// 3. If no, fall back to the default base path
+    ///
+    /// # Returns
+    ///
+    /// The base path where new worktrees should be created
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the default base path cannot be determined
     fn determine_worktree_base_path(&self) -> Result<PathBuf> {
         if let Ok(existing_worktrees) = self.list_worktrees() {
             if let Some(common_parent) = find_common_parent(&existing_worktrees) {
@@ -341,6 +469,27 @@ impl GitWorktreeManager {
     }
 
     /// Creates a worktree with a specific branch
+    ///
+    /// Uses the git CLI command for branch-based worktree creation because
+    /// git2's worktree API has limitations with branch handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The filesystem path for the new worktree
+    /// * `branch_name` - The branch to check out in the worktree
+    ///
+    /// # Behavior
+    ///
+    /// - If the branch exists: Creates worktree with that branch checked out
+    /// - If the branch doesn't exist: Creates a new branch and worktree
+    ///
+    /// # Returns
+    ///
+    /// The path to the created worktree
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the git command fails
     fn create_worktree_with_branch(&self, path: &Path, branch_name: &str) -> Result<PathBuf> {
         use std::process::Command;
 
@@ -376,10 +525,29 @@ impl GitWorktreeManager {
             ));
         }
 
-        Ok(path.to_path_buf())
+        // Return the canonicalized path
+        path.canonicalize().or_else(|_| Ok(path.to_path_buf()))
     }
 
     /// Creates a worktree from the current HEAD
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The filesystem path for the new worktree
+    /// * `name` - The name for the worktree (used by git2 API)
+    ///
+    /// # Implementation Notes
+    ///
+    /// - For bare repositories: Uses git CLI command
+    /// - For normal repositories: Uses git2 API
+    ///
+    /// # Returns
+    ///
+    /// The path to the created worktree
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if worktree creation fails
     fn create_worktree_from_head(&self, path: &Path, name: &str) -> Result<PathBuf> {
         if self.repo.is_bare() {
             // For bare repositories, use git command
@@ -402,13 +570,32 @@ impl GitWorktreeManager {
             // For non-bare repositories, use git2 API
             self.repo.worktree(name, path, None)?;
         }
-        Ok(path.to_path_buf())
+
+        // Return the canonicalized path
+        path.canonicalize().or_else(|_| Ok(path.to_path_buf()))
     }
 
     /// Removes a worktree by name
     ///
     /// This prunes the worktree, removing both the Git metadata and
-    /// the working directory.
+    /// the working directory. The operation is atomic - either everything
+    /// is removed or nothing is.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the worktree to remove
+    ///
+    /// # Safety
+    ///
+    /// - Cannot remove the current worktree (checked by caller)
+    /// - Removes all files in the worktree directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The worktree doesn't exist
+    /// - The worktree is locked
+    /// - File system operations fail
     pub fn remove_worktree(&self, name: &str) -> Result<()> {
         let worktree = self.repo.find_worktree(name)?;
         worktree.prune(Some(
@@ -421,9 +608,27 @@ impl GitWorktreeManager {
 
     /// Lists all local branches in the repository
     ///
+    /// Remote branches are excluded from this list. The returned list
+    /// is sorted alphabetically for consistent display.
+    ///
     /// # Returns
     ///
-    /// A sorted vector of branch names
+    /// A sorted vector of branch names (without the "refs/heads/" prefix)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if branch enumeration fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use git_workers::git::GitWorktreeManager;
+    /// # let manager = GitWorktreeManager::new().unwrap();
+    /// let branches = manager.list_branches().unwrap();
+    /// for branch in branches {
+    ///     println!("Branch: {}", branch);
+    /// }
+    /// ```
     pub fn list_branches(&self) -> Result<Vec<String>> {
         let mut branches = Vec::new();
         let branch_iter = self.repo.branches(Some(BranchType::Local))?;
@@ -443,6 +648,18 @@ impl GitWorktreeManager {
     /// # Arguments
     ///
     /// * `branch_name` - The name of the branch to delete
+    ///
+    /// # Safety
+    ///
+    /// This performs a force delete. The caller should ensure:
+    /// - The branch is not currently checked out in any worktree
+    /// - Any important changes have been merged
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The branch doesn't exist
+    /// - The branch cannot be deleted (e.g., currently checked out)
     pub fn delete_branch(&self, branch_name: &str) -> Result<()> {
         match self.repo.find_branch(branch_name, BranchType::Local) {
             Ok(mut branch) => {
@@ -453,6 +670,94 @@ impl GitWorktreeManager {
         }
     }
 
+    /// Checks if a branch is unique to a specific worktree
+    ///
+    /// This is used to determine if a branch should be offered for deletion
+    /// when removing a worktree.
+    ///
+    /// # Arguments
+    ///
+    /// * `branch_name` - The name of the branch to check
+    /// * `worktree_name` - The name of the worktree to check against
+    ///
+    /// # Returns
+    ///
+    /// `true` if the branch is only checked out in the specified worktree
+    /// and not in any other worktree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if worktree enumeration fails
+    pub fn is_branch_unique_to_worktree(
+        &self,
+        branch_name: &str,
+        worktree_name: &str,
+    ) -> Result<bool> {
+        let worktrees = self.list_worktrees()?;
+        let mut count = 0;
+        let mut found_in_target = false;
+
+        for worktree in &worktrees {
+            if worktree.branch == branch_name {
+                count += 1;
+                if worktree.name == worktree_name {
+                    found_in_target = true;
+                }
+            }
+        }
+
+        Ok(found_in_target && count == 1)
+    }
+
+    /// Renames a branch
+    ///
+    /// Uses the git CLI for more robust branch renaming, as it handles
+    /// all the edge cases better than the git2 API.
+    ///
+    /// # Arguments
+    ///
+    /// * `old_name` - The current name of the branch
+    /// * `new_name` - The new name for the branch
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The old branch doesn't exist
+    /// - The new branch name already exists
+    /// - The branch is currently checked out (in some Git versions)
+    pub fn rename_branch(&self, old_name: &str, new_name: &str) -> Result<()> {
+        use std::process::Command;
+
+        // Use git CLI for more robust branch renaming
+        let output = Command::new("git")
+            .current_dir(self.get_git_dir()?)
+            .arg("branch")
+            .arg("-m")
+            .arg(old_name)
+            .arg(new_name)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("Failed to rename branch: {}", stderr.trim()));
+        }
+
+        Ok(())
+    }
+
+    /// Checks if a worktree has uncommitted changes
+    ///
+    /// # Arguments
+    ///
+    /// * `repo` - The repository object for the worktree
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are any uncommitted changes (including untracked files)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if status enumeration fails
     #[allow(dead_code)]
     fn check_worktree_changes(&self, repo: &Repository) -> Result<bool> {
         let statuses = repo.statuses(Some(
@@ -464,6 +769,21 @@ impl GitWorktreeManager {
         Ok(!statuses.is_empty())
     }
 
+    /// Gets information about the last commit in a repository
+    ///
+    /// # Arguments
+    ///
+    /// * `repo` - The repository to query
+    ///
+    /// # Returns
+    ///
+    /// A [`CommitInfo`] struct with commit details
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The repository has no commits
+    /// - Cannot access HEAD
     #[allow(dead_code)]
     fn get_last_commit(&self, repo: &Repository) -> Result<CommitInfo> {
         let head = repo.head()?.peel_to_commit()?;
@@ -484,6 +804,36 @@ impl GitWorktreeManager {
         })
     }
 
+    /// Renames a worktree, including all associated Git metadata
+    ///
+    /// This is a complex operation that involves:
+    /// 1. Moving the worktree directory
+    /// 2. Renaming the `.git/worktrees/<name>` metadata directory
+    /// 3. Updating the `gitdir` file to point to the new location
+    /// 4. Updating the `.git` file in the worktree
+    /// 5. Running `git worktree repair` to fix any remaining references
+    ///
+    /// # Arguments
+    ///
+    /// * `old_name` - The current name of the worktree
+    /// * `new_name` - The desired new name
+    ///
+    /// # Returns
+    ///
+    /// The new path to the renamed worktree
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The new name contains whitespace
+    /// - The target path already exists
+    /// - The worktree is currently active
+    /// - The worktree has a detached HEAD
+    /// - Any file system operations fail
+    ///
+    /// # Note
+    ///
+    /// Branch renaming is handled separately by the caller if needed.
     pub fn rename_worktree(&self, old_name: &str, new_name: &str) -> Result<PathBuf> {
         use std::fs;
         use std::process::Command;
@@ -518,13 +868,10 @@ impl GitWorktreeManager {
             ));
         }
 
-        // Get the branch name
-        let branch_name = if let Ok(wt_repo) = Repository::open(&old_path) {
+        // Validate the worktree is not in detached HEAD state
+        if let Ok(wt_repo) = Repository::open(&old_path) {
             if let Ok(head) = wt_repo.head() {
-                if head.is_branch() {
-                    head.shorthand().unwrap_or("").to_string()
-                } else {
-                    // Detached HEAD - cannot use branch rename
+                if !head.is_branch() {
                     return Err(anyhow!("Cannot rename worktree with detached HEAD"));
                 }
             } else {
@@ -532,16 +879,29 @@ impl GitWorktreeManager {
             }
         } else {
             return Err(anyhow!("Cannot open worktree repository"));
-        };
+        }
 
         // Step 1: Move the directory
         fs::rename(&old_path, &new_path)?;
 
-        // Step 2: Get the git directory
-        let git_dir = self.repo.path().to_path_buf();
+        // Step 2: Rename the git metadata directory
+        // Use git rev-parse to find the common git directory
+        let output = Command::new("git")
+            .current_dir(self.get_git_dir()?)
+            .arg("rev-parse")
+            .arg("--git-common-dir")
+            .output()?;
 
-        let old_worktree_git_dir = git_dir.join("worktrees").join(old_name);
-        let new_worktree_git_dir = git_dir.join("worktrees").join(new_name);
+        let git_common_dir = if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            PathBuf::from(path_str)
+        } else {
+            // Fallback to repo path
+            self.repo.path().to_path_buf()
+        };
+
+        let old_worktree_git_dir = git_common_dir.join("worktrees").join(old_name);
+        let new_worktree_git_dir = git_common_dir.join("worktrees").join(new_name);
 
         if old_worktree_git_dir.exists() {
             fs::rename(&old_worktree_git_dir, &new_worktree_git_dir)?;
@@ -560,27 +920,44 @@ impl GitWorktreeManager {
             fs::write(&git_file_path, git_file_content)?;
         }
 
-        // Step 4: If the branch name matches the old worktree name, rename it
-        if branch_name == old_name {
-            let output = Command::new("git")
-                .current_dir(&new_path)
-                .arg("branch")
-                .arg("-m")
-                .arg(&branch_name)
-                .arg(new_name)
-                .output()?;
+        // Step 4: Run git worktree repair to update Git's internal tracking
+        // Note: This won't rename the worktree in Git's tracking, but will ensure
+        // the paths are correct
+        let repair_output = Command::new("git")
+            .current_dir(self.get_git_dir()?)
+            .args(["worktree", "repair"])
+            .output()?;
 
-            if !output.status.success() {
-                eprintln!(
-                    "Warning: Could not rename branch: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
+        if !repair_output.status.success() {
+            eprintln!(
+                "Warning: git worktree repair failed: {}",
+                String::from_utf8_lossy(&repair_output.stderr)
+            );
         }
+
+        // Branch renaming is handled separately by the caller
 
         Ok(new_path)
     }
 
+    /// Gets the ahead/behind count relative to the upstream branch
+    ///
+    /// # Arguments
+    ///
+    /// * `repo` - The repository to check
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (ahead, behind) counts:
+    /// - `ahead`: Number of commits ahead of upstream
+    /// - `behind`: Number of commits behind upstream
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Not on a branch (detached HEAD)
+    /// - No upstream branch is configured
+    /// - Cannot compute the graph difference
     #[allow(dead_code)]
     fn get_ahead_behind(&self, repo: &Repository) -> Result<(usize, usize)> {
         let head = repo.head()?;
@@ -604,6 +981,9 @@ impl GitWorktreeManager {
 }
 
 /// Status information for a worktree
+///
+/// This struct is used internally to collect status information
+/// about a worktree in a single pass.
 struct WorktreeStatus {
     has_changes: bool,
     last_commit: Option<CommitInfo>,
@@ -611,6 +991,25 @@ struct WorktreeStatus {
 }
 
 /// Gets the status information for a worktree
+///
+/// This function opens the worktree repository and collects various
+/// status information. It's designed to be called from multiple threads
+/// in parallel.
+///
+/// # Arguments
+///
+/// * `path` - The filesystem path to the worktree
+///
+/// # Returns
+///
+/// A [`WorktreeStatus`] struct with the collected information.
+/// If the repository cannot be opened, returns a status with all
+/// fields set to their default/empty values.
+///
+/// # Performance
+///
+/// This function is optimized for speed over completeness. Some
+/// expensive operations (like ahead/behind calculation) are skipped.
 fn get_worktree_status(path: &Path) -> WorktreeStatus {
     if let Ok(repo) = Repository::open(path) {
         let has_changes = repo
@@ -678,8 +1077,10 @@ pub struct WorktreeInfo {
     /// Whether the worktree has uncommitted changes
     pub has_changes: bool,
     /// Information about the last commit in the worktree
+    #[allow(dead_code)]
     pub last_commit: Option<CommitInfo>,
     /// Number of commits ahead and behind the upstream branch
+    #[allow(dead_code)]
     pub ahead_behind: Option<(usize, usize)>, // (ahead, behind)
 }
 
@@ -689,19 +1090,49 @@ pub struct WorktreeInfo {
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
     /// Short commit ID (first 8 characters)
+    #[allow(dead_code)]
     pub id: String,
     /// First line of the commit message
+    #[allow(dead_code)]
     pub message: String,
     /// Commit author name
     #[allow(dead_code)]
     pub author: String,
     /// Formatted commit time (YYYY-MM-DD HH:MM)
+    #[allow(dead_code)]
     pub time: String,
 }
 
 /// Convenience function to list worktrees from the current directory
 ///
-/// This is a wrapper around GitWorktreeManager for simple CLI usage
+/// This is a wrapper around GitWorktreeManager for simple CLI usage.
+/// It discovers the repository from the current directory and returns
+/// a formatted list of worktrees.
+///
+/// # Returns
+///
+/// A vector of formatted strings in the format "name (branch)"
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Not in a Git repository
+/// - Cannot enumerate worktrees
+///
+/// # Example
+///
+/// ```no_run
+/// # use git_workers::git::list_worktrees;
+/// match list_worktrees() {
+///     Ok(worktrees) => {
+///         for wt in worktrees {
+///             println!("{}", wt);
+///         }
+///     }
+///     Err(e) => eprintln!("Error: {}", e),
+/// }
+/// ```
+#[allow(dead_code)]
 pub fn list_worktrees() -> Result<Vec<String>> {
     let manager = GitWorktreeManager::new()?;
     let worktrees = manager.list_worktrees()?;

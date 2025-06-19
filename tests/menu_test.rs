@@ -171,6 +171,7 @@ fn test_menu_item_match_pattern() {
         MenuItem::CleanupOldWorktrees => "cleanup",
         MenuItem::SwitchWorktree => "switch",
         MenuItem::RenameWorktree => "rename",
+        MenuItem::EditHooks => "edit_hooks",
         MenuItem::Exit => "exit",
     };
 

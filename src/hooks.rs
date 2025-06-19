@@ -33,15 +33,40 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Config;
+use crate::constants::{LARGE_OUTPUT_LIMIT, OUTPUT_TRUNCATE_LIMIT};
 
 /// Context information passed to hook commands
 ///
 /// This struct contains information about the worktree that hooks
 /// can use via template placeholders in their command strings.
+///
+/// # Usage
+///
+/// Create a `HookContext` when executing hooks to provide worktree
+/// information that can be interpolated into hook commands:
+///
+/// ```no_run
+/// # use git_workers::hooks::HookContext;
+/// # use std::path::PathBuf;
+/// let context = HookContext {
+///     worktree_name: "feature-auth".to_string(),
+///     worktree_path: PathBuf::from("/home/user/project/feature-auth"),
+/// };
+/// ```
+///
+/// Hook commands can then use placeholders:
+/// - `"echo Working on {{worktree_name}}"` → `"echo Working on feature-auth"`
+/// - `"cd {{worktree_path}} && npm install"` → `"cd /home/user/project/feature-auth && npm install"`
 pub struct HookContext {
     /// The name of the worktree being operated on
+    ///
+    /// This is typically the directory name of the worktree,
+    /// e.g., "main", "feature-auth", "bugfix-123"
     pub worktree_name: String,
     /// The full filesystem path to the worktree
+    ///
+    /// This is the absolute path where the worktree files are located,
+    /// used as the working directory when executing hook commands
     pub worktree_path: PathBuf,
 }
 
@@ -116,10 +141,19 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
             if !output.status.success() {
                 // Log hook failures but don't stop execution
                 // This prevents a misconfigured hook from breaking worktree operations
-                eprintln!(
-                    "Hook command failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                // Limit error output to prevent buffer overflow
+                let error_msg = if stderr.len() > OUTPUT_TRUNCATE_LIMIT {
+                    format!("{}... (truncated)", &stderr[..OUTPUT_TRUNCATE_LIMIT])
+                } else {
+                    stderr.to_string()
+                };
+                eprintln!("Hook command failed: {}", error_msg);
+            }
+
+            // Also limit stdout output if it's too large
+            if output.stdout.len() > LARGE_OUTPUT_LIMIT {
+                println!("    (output truncated, {} bytes)", output.stdout.len());
             }
         }
     }

@@ -106,7 +106,10 @@ fn test_config_struct_creation() {
     let mut hooks = HashMap::new();
     hooks.insert("test-hook".to_string(), vec!["echo test".to_string()]);
 
-    let config = Config { hooks };
+    let config = Config {
+        repository: git_workers::config::RepositoryConfig::default(),
+        hooks,
+    };
 
     assert!(!config.hooks.is_empty());
     assert!(config.hooks.contains_key("test-hook"));

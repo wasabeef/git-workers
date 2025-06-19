@@ -16,10 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Git Operations
-git2 = "0.18"
+git2 = "0.20"
 
 # CLI Framework  
-dialoguer = "0.10"
+dialoguer = "0.11"
 console = "0.15"
 clap = { version = "4.5", features = ["derive"] }
 
@@ -31,12 +31,11 @@ toml = "0.8"
 anyhow = "1.0"
 
 # Utility
-dirs = "5.0"
-colored = "2.1"
+colored = "2.1"  # Keep at 2.1 to maintain lower MSRV
 chrono = "0.4"
 fuzzy-matcher = "0.3"
 indicatif = "0.17"
-rustyline = "14.0"
+unicode-width = "0.2.1"
 
 [dev-dependencies]
 tempfile = "3.8"

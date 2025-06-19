@@ -1,0 +1,23 @@
+# Git Workers configuration file
+
+[repository]
+# Repository URL for identification (optional)
+# This ensures hooks only run in the intended repository
+url = "https://github.com/wasabeef/git-workers.git"
+
+[hooks]
+# Run after creating a new worktree
+post-create = [
+    "echo '🤖 Created worktree: {{worktree_name}}'",
+    "echo '🤖 Path: {{worktree_path}}'"
+]
+
+# Run before removing a worktree
+pre-remove = [
+    "echo '🤖 Removing worktree: {{worktree_name}}'"
+]
+
+# Run after switching to a worktree
+post-switch = [
+    "echo '🤖 Switched to: {{worktree_name}}'"
+]
