@@ -54,6 +54,7 @@ cargo check --all-features
 cargo doc --no-deps --open
 ```
 
+
 ### Installation
 
 ```bash
@@ -67,6 +68,17 @@ cargo install --path .
 source /path/to/git-workers/shell/gw.sh
 ```
 
+## Recent Changes
+
+### Branch Option Simplification
+- Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
+- Smart mode automatically handles branch conflicts and offers appropriate actions
+
+### Key Methods Added/Modified
+- **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
+- **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
+- **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
+
 ## Architecture
 
 ### Core Module Structure
@@ -74,6 +86,7 @@ source /path/to/git-workers/shell/gw.sh
 ```
 src/
 ├── main.rs              # CLI entry point and main menu loop
+├── lib.rs               # Library exports
 ├── commands.rs          # Command implementations for menu items
 ├── git.rs               # Git worktree operations (git2 + process::Command)
 ├── menu.rs              # MenuItem enum and icon definitions
@@ -114,12 +127,14 @@ post-switch = ["echo 'Switched to {{worktree_name}}'"]
 ```
 
 Template variables:
+
 - `{{worktree_name}}`: The worktree name
 - `{{worktree_path}}`: Absolute path to worktree
 
 ### Worktree Patterns
 
 First worktree creation offers two options:
+
 1. Same level as repository: `../worktree-name`
 2. In subdirectory (recommended): `../repo/worktrees/worktree-name`
 
@@ -128,6 +143,7 @@ Subsequent worktrees follow the established pattern automatically.
 ### ESC Key Handling
 
 All interactive prompts support ESC cancellation through custom `input_esc_raw` module:
+
 - `input_esc_raw()` returns `Option<String>` (None on ESC)
 - `Select::interact_opt()` for menu selections
 - `Confirm::interact_opt()` for confirmations
@@ -135,6 +151,7 @@ All interactive prompts support ESC cancellation through custom `input_esc_raw` 
 ### Worktree Rename Implementation
 
 Since Git lacks native rename functionality:
+
 1. Move directory with `fs::rename`
 2. Update `.git/worktrees/<name>` metadata directory
 3. Update gitdir files in both directions
@@ -149,9 +166,11 @@ Since Git lacks native rename functionality:
 
 ### Testing Considerations
 
+- Integration tests in `tests/` directory (27 test files)
 - Some tests are flaky in parallel execution (marked with `#[ignore]`)
 - CI sets `CI=true` environment variable to skip flaky tests
 - Run with `--test-threads=1` for reliable results
+- Use `--nocapture` to see test output for debugging
 
 ### Important Constraints
 
@@ -161,3 +180,4 @@ Since Git lacks native rename functionality:
 - Cannot rename worktrees with detached HEAD
 - Shell integration supports Bash/Zsh only
 - No Windows support (macOS and Linux only)
+- Recent breaking change: CLI arguments removed in favor of menu-only interface

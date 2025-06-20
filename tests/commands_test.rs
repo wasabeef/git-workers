@@ -46,8 +46,8 @@ fn test_create_worktree_with_branch() -> Result<()> {
     assert!(worktree_path.exists());
 
     // Verify branch was created
-    let branches = manager.list_branches()?;
-    assert!(branches.contains(&"new-feature".to_string()));
+    let (local_branches, _) = manager.list_all_branches()?;
+    assert!(local_branches.contains(&"new-feature".to_string()));
 
     Ok(())
 }
@@ -140,7 +140,7 @@ fn test_remove_worktree_nonexistent() -> Result<()> {
 }
 
 #[test]
-fn test_list_branches() -> Result<()> {
+fn test_list_all_branches() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path().join("test-repo");
 
@@ -149,9 +149,12 @@ fn test_list_branches() -> Result<()> {
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
-    let branches = manager.list_branches()?;
-    assert!(!branches.is_empty());
-    assert!(branches.contains(&"main".to_string()) || branches.contains(&"master".to_string()));
+    let (local_branches, _) = manager.list_all_branches()?;
+    assert!(!local_branches.is_empty());
+    assert!(
+        local_branches.contains(&"main".to_string())
+            || local_branches.contains(&"master".to_string())
+    );
 
     Ok(())
 }
@@ -187,7 +190,7 @@ fn test_delete_branch_success() -> Result<()> {
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
     // Verify branch exists before deletion
-    let branches_before = manager.list_branches()?;
+    let (branches_before, _) = manager.list_all_branches()?;
     assert!(branches_before.contains(&"test-branch".to_string()));
 
     // Delete the branch
@@ -209,7 +212,7 @@ fn test_delete_branch_success() -> Result<()> {
     assert!(result.is_ok());
 
     // Verify it's gone
-    let branches = manager.list_branches()?;
+    let (branches, _) = manager.list_all_branches()?;
     assert!(!branches.contains(&"test-branch".to_string()));
 
     Ok(())

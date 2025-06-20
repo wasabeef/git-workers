@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 
 use crate::constants::{
     DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE,
-    TIME_FORMAT,
+    GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX, TIME_FORMAT,
 };
 
 // Git-specific constants
@@ -445,6 +445,202 @@ impl GitWorktreeManager {
         }
     }
 
+    /// Creates a worktree with a new branch from a base branch
+    ///
+    /// This method creates a new worktree with a new branch that branches off from
+    /// the specified base branch. This is useful for feature development workflows
+    /// where you want to create a new feature branch from main/develop.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The worktree name/path (can include path patterns like "../name" or "worktrees/name")
+    /// * `new_branch` - The name of the new branch to create
+    /// * `base_branch` - The base branch to create from (can be local or remote like "origin/main")
+    ///
+    /// # Returns
+    ///
+    /// The canonical path to the created worktree
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The worktree path already exists
+    /// - The new branch name already exists
+    /// - Git command execution fails
+    /// - Parent directory creation fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use git_workers::git::GitWorktreeManager;
+    /// # let manager = GitWorktreeManager::new().unwrap();
+    /// // Create a new feature branch from main
+    /// let path = manager.create_worktree_with_new_branch(
+    ///     "feature-x",
+    ///     "feature-x",
+    ///     "main"
+    /// ).unwrap();
+    /// ```
+    pub fn create_worktree_with_new_branch(
+        &self,
+        name: &str,
+        new_branch: &str,
+        base_branch: &str,
+    ) -> Result<PathBuf> {
+        let base_path = self.determine_worktree_base_path()?;
+
+        // Handle different path patterns (same as create_worktree)
+        let worktree_path = if name.starts_with("../") {
+            let repo_dir = self
+                .repo
+                .workdir()
+                .or_else(|| self.repo.path().parent())
+                .ok_or_else(|| anyhow!("Cannot determine repository directory"))?;
+            repo_dir.join(name)
+        } else if name.contains('/') {
+            let repo_dir = self.repo.workdir().unwrap_or_else(|| self.repo.path());
+            repo_dir.join(name)
+        } else {
+            base_path.join(name)
+        };
+
+        // Ensure parent directories exist
+        if let Some(parent) = worktree_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        if worktree_path.exists() {
+            return Err(anyhow!(
+                "Worktree path already exists: {}",
+                worktree_path.display()
+            ));
+        }
+
+        // Extract the actual worktree name (unused but kept for consistency)
+        let _worktree_name = worktree_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(name);
+
+        // Canonicalize the path
+        let canonical_path = worktree_path
+            .canonicalize()
+            .or_else(|_| -> Result<PathBuf> {
+                if let Some(parent) = worktree_path.parent() {
+                    if let Ok(canonical_parent) = parent.canonicalize() {
+                        return Ok(canonical_parent.join(worktree_path.file_name().unwrap()));
+                    }
+                }
+                Ok(worktree_path.clone())
+            })
+            .unwrap_or_else(|_| worktree_path.clone());
+
+        // Use git CLI to create worktree with new branch
+        use std::process::Command;
+        let output = Command::new("git")
+            .current_dir(self.get_git_dir()?)
+            .arg("worktree")
+            .arg("add")
+            .arg("-b")
+            .arg(new_branch)
+            .arg(&canonical_path)
+            .arg(base_branch)
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!(
+                "Failed to create worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        // Return the canonicalized path
+        canonical_path
+            .canonicalize()
+            .or_else(|_| Ok(canonical_path))
+    }
+
+    /// Gets the branch that is checked out in each worktree
+    ///
+    /// This method maps branch names to their corresponding worktree names,
+    /// including both the main worktree (repository itself) and all linked worktrees.
+    /// This is useful for preventing multiple checkouts of the same branch.
+    ///
+    /// # Returns
+    ///
+    /// A HashMap where:
+    /// - Key: Branch name (e.g., "main", "feature-x", "origin/remote-branch")
+    /// - Value: Worktree name (e.g., "git-workers", "feature-worktree")
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use git_workers::git::GitWorktreeManager;
+    /// # let manager = GitWorktreeManager::new().unwrap();
+    /// let map = manager.get_branch_worktree_map().unwrap();
+    /// if let Some(worktree) = map.get("main") {
+    ///     println!("Branch 'main' is checked out in worktree '{}'", worktree);
+    /// }
+    /// ```
+    pub fn get_branch_worktree_map(&self) -> Result<std::collections::HashMap<String, String>> {
+        let mut map = std::collections::HashMap::new();
+
+        // First, check the main worktree (the repository itself)
+        if let Ok(head) = self.repo.head() {
+            if head.is_branch() {
+                if let Some(branch_name) = head.shorthand() {
+                    // For main worktree, use the repository path as the name
+                    let main_worktree_name = if let Some(workdir) = self.repo.workdir() {
+                        workdir
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(GIT_DEFAULT_MAIN_WORKTREE)
+                            .to_string()
+                    } else {
+                        GIT_DEFAULT_MAIN_WORKTREE.to_string()
+                    };
+                    map.insert(branch_name.to_string(), main_worktree_name);
+                }
+            } else if let Some(shorthand) = head.shorthand() {
+                let main_worktree_name = if let Some(workdir) = self.repo.workdir() {
+                    workdir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("main")
+                        .to_string()
+                } else {
+                    "main".to_string()
+                };
+                map.insert(shorthand.to_string(), main_worktree_name);
+            }
+        }
+
+        // Then check all linked worktrees
+        let worktree_names = self.repo.worktrees()?;
+        for name in worktree_names.iter().flatten() {
+            if let Ok(worktree) = self.repo.find_worktree(name) {
+                if let Ok(repo) = Repository::open(worktree.path()) {
+                    if let Ok(head) = repo.head() {
+                        // Check if HEAD is a direct reference to a branch
+                        if head.is_branch() {
+                            // It's a local branch
+                            if let Some(branch_name) = head.shorthand() {
+                                map.insert(branch_name.to_string(), name.to_string());
+                            }
+                        } else if let Some(shorthand) = head.shorthand() {
+                            // It might be a remote tracking branch or detached HEAD
+                            // For remote tracking branches, the shorthand will be like "origin/branch"
+                            // We'll include these in the map as well
+                            map.insert(shorthand.to_string(), name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(map)
+    }
+
     /// Determines the base path for creating new worktrees
     ///
     /// This method implements the pattern detection logic:
@@ -493,27 +689,60 @@ impl GitWorktreeManager {
     fn create_worktree_with_branch(&self, path: &Path, branch_name: &str) -> Result<PathBuf> {
         use std::process::Command;
 
-        // Check if branch exists
-        let branch_exists = self
-            .repo
-            .find_branch(branch_name, BranchType::Local)
-            .is_ok();
-
         let mut cmd = Command::new("git");
-
-        // Set the current directory to the repository path
         cmd.current_dir(self.get_git_dir()?);
 
-        if branch_exists {
-            // If branch exists, create worktree pointing to that branch
-            cmd.arg("worktree").arg("add").arg(path).arg(branch_name);
+        // Check if this is a remote branch reference (e.g., "origin/feature")
+        if branch_name.starts_with(GIT_REMOTE_PREFIX) {
+            // For remote branches, we need to create a local branch
+            // Extract the branch name without "origin/" prefix
+            let local_branch_name = branch_name
+                .strip_prefix(GIT_REMOTE_PREFIX)
+                .unwrap_or(branch_name);
+
+            // Check if a local branch with this name already exists
+            let local_exists = self
+                .repo
+                .find_branch(local_branch_name, BranchType::Local)
+                .is_ok();
+
+            if local_exists {
+                // Local branch exists - this might fail if it's already checked out
+                // Let's return a more helpful error message
+                return Err(anyhow!(
+                    "Cannot create worktree from '{}': A local branch '{}' already exists.\n\
+                     If you want to use the existing local branch, please select it from the local branches list.\n\
+                     If you want to create a new worktree from the remote branch, consider using a different name.",
+                    branch_name,
+                    local_branch_name
+                ));
+            } else {
+                // Create new local branch from remote
+                cmd.arg("worktree")
+                    .arg("add")
+                    .arg("-b")
+                    .arg(local_branch_name)
+                    .arg(path)
+                    .arg(branch_name);
+            }
         } else {
-            // If branch doesn't exist, create new branch with worktree
-            cmd.arg("worktree")
-                .arg("add")
-                .arg("-b")
-                .arg(branch_name)
-                .arg(path);
+            // Check if local branch exists
+            let branch_exists = self
+                .repo
+                .find_branch(branch_name, BranchType::Local)
+                .is_ok();
+
+            if branch_exists {
+                // If branch exists, create worktree pointing to that branch
+                cmd.arg("worktree").arg("add").arg(path).arg(branch_name);
+            } else {
+                // If branch doesn't exist, create new branch with worktree
+                cmd.arg("worktree")
+                    .arg("add")
+                    .arg("-b")
+                    .arg(branch_name)
+                    .arg(path);
+            }
         }
 
         let output = cmd.output()?;
@@ -548,27 +777,23 @@ impl GitWorktreeManager {
     /// # Errors
     ///
     /// Returns an error if worktree creation fails
-    fn create_worktree_from_head(&self, path: &Path, name: &str) -> Result<PathBuf> {
-        if self.repo.is_bare() {
-            // For bare repositories, use git command
-            use std::process::Command;
-            let output = Command::new("git")
-                .current_dir(self.get_git_dir()?)
-                .arg("worktree")
-                .arg("add")
-                .arg(path)
-                .arg("HEAD")
-                .output()?;
+    fn create_worktree_from_head(&self, path: &Path, _name: &str) -> Result<PathBuf> {
+        use std::process::Command;
 
-            if !output.status.success() {
-                return Err(anyhow!(
-                    "Failed to create worktree: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-        } else {
-            // For non-bare repositories, use git2 API
-            self.repo.worktree(name, path, None)?;
+        // For both bare and non-bare repositories, use git command without specifying HEAD
+        // This will create a new branch with the worktree name automatically
+        let output = Command::new("git")
+            .current_dir(self.get_git_dir()?)
+            .arg("worktree")
+            .arg("add")
+            .arg(path)
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!(
+                "Failed to create worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         // Return the canonicalized path
@@ -606,14 +831,17 @@ impl GitWorktreeManager {
         Ok(())
     }
 
-    /// Lists all local branches in the repository
+    /// Lists all branches (local and remote) in the repository
     ///
-    /// Remote branches are excluded from this list. The returned list
-    /// is sorted alphabetically for consistent display.
+    /// This method provides a comprehensive list of all branches, separated by type.
+    /// Remote branch names have the "origin/" prefix stripped for cleaner display,
+    /// and HEAD references are excluded from the remote branches list.
     ///
     /// # Returns
     ///
-    /// A sorted vector of branch names (without the "refs/heads/" prefix)
+    /// A tuple containing:
+    /// - `Vec<String>` of local branch names (sorted alphabetically)
+    /// - `Vec<String>` of remote branch names without "origin/" prefix (sorted alphabetically)
     ///
     /// # Errors
     ///
@@ -624,23 +852,39 @@ impl GitWorktreeManager {
     /// ```no_run
     /// # use git_workers::git::GitWorktreeManager;
     /// # let manager = GitWorktreeManager::new().unwrap();
-    /// let branches = manager.list_branches().unwrap();
-    /// for branch in branches {
-    ///     println!("Branch: {}", branch);
-    /// }
+    /// let (local_branches, remote_branches) = manager.list_all_branches().unwrap();
+    /// println!("Local branches: {:?}", local_branches);
+    /// println!("Remote branches: {:?}", remote_branches);
     /// ```
-    pub fn list_branches(&self) -> Result<Vec<String>> {
-        let mut branches = Vec::new();
-        let branch_iter = self.repo.branches(Some(BranchType::Local))?;
+    pub fn list_all_branches(&self) -> Result<(Vec<String>, Vec<String>)> {
+        let mut local_branches = Vec::new();
+        let mut remote_branches = Vec::new();
 
-        for (branch, _) in branch_iter.flatten() {
+        // Get local branches
+        let local_iter = self.repo.branches(Some(BranchType::Local))?;
+        for (branch, _) in local_iter.flatten() {
             if let Some(name) = branch.name()? {
-                branches.push(name.to_string());
+                local_branches.push(name.to_string());
             }
         }
 
-        branches.sort();
-        Ok(branches)
+        // Get remote branches
+        let remote_iter = self.repo.branches(Some(BranchType::Remote))?;
+        for (branch, _) in remote_iter.flatten() {
+            if let Some(name) = branch.name()? {
+                // Remove "origin/" prefix for cleaner display
+                let clean_name = name.strip_prefix(GIT_REMOTE_PREFIX).unwrap_or(name);
+                // Skip HEAD references
+                if clean_name != "HEAD" {
+                    remote_branches.push(clean_name.to_string());
+                }
+            }
+        }
+
+        local_branches.sort();
+        remote_branches.sort();
+
+        Ok((local_branches, remote_branches))
     }
 
     /// Deletes a local branch by name

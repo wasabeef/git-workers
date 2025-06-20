@@ -56,7 +56,12 @@ Git Workers provides an interactive menu-driven interface. Simply run `gw` and n
 
 - **List worktrees** (`•`): Display all worktrees with branch, changes, and sync status
 - **Search worktrees** (`?`): Fuzzy search through worktree names and branches
-- **Create worktree** (`+`): Create a new worktree from existing branch or create a new branch
+- **Create worktree** (`+`): Create a new worktree with two options:
+  - **Create from current HEAD**: Creates a new worktree with a new branch from the current HEAD
+  - **Select branch (smart mode)**: Choose from local/remote branches with automatic conflict resolution:
+    - Shows both local and remote branches with usage status
+    - Automatically handles branch conflicts (offers to create new branch if already in use)
+    - Remote branches are prefixed with `↑` for easy identification
 - **Delete worktree** (`-`): Delete a single worktree with safety checks
 - **Batch delete** (`=`): Select and delete multiple worktrees at once (optionally deletes orphaned branches)
 - **Cleanup old worktrees** (`~`): Remove worktrees older than specified days

@@ -50,7 +50,7 @@ fn test_create_worktree_with_new_branch() -> Result<()> {
     assert!(worktrees.iter().any(|w| w.name == worktree_name));
 
     // Verify branch was created
-    let branches = manager.list_branches()?;
+    let (branches, _) = manager.list_all_branches()?;
     assert!(branches.contains(&branch_name.to_string()));
 
     Ok(())
@@ -157,14 +157,14 @@ fn test_delete_branch() -> Result<()> {
     repo.branch(branch_name, &commit, false)?;
 
     // Verify branch exists
-    let branches = manager.list_branches()?;
+    let (branches, _) = manager.list_all_branches()?;
     assert!(branches.contains(&branch_name.to_string()));
 
     // Delete the branch
     manager.delete_branch(branch_name)?;
 
     // Verify branch is deleted
-    let branches = manager.list_branches()?;
+    let (branches, _) = manager.list_all_branches()?;
     assert!(!branches.contains(&branch_name.to_string()));
 
     Ok(())

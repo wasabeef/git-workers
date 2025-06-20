@@ -27,7 +27,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
-use crate::constants::section_header;
+use crate::constants::{section_header, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
 use crate::input_esc_raw::{
@@ -524,7 +524,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
         let options = vec![
             format!("Same level as repository (../{name})"),
-            format!("In subdirectory ({repo_name}/worktrees/{name})"),
+            format!("In subdirectory ({repo_name}/{}/{name})", WORKTREES_SUBDIR),
         ];
 
         let selection = match Select::with_theme(&get_theme())
@@ -538,8 +538,8 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         };
 
         match selection {
-            0 => format!("../{}", name),        // Same level
-            _ => format!("worktrees/{}", name), // Subdirectory pattern
+            0 => format!("../{}", name),                   // Same level
+            _ => format!("{}/{}", WORKTREES_SUBDIR, name), // Subdirectory pattern
         }
     } else {
         name.clone()
@@ -547,7 +547,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Branch handling
     println!();
-    let branch_options = vec!["Create from current HEAD", "Create from existing branch"];
+    let branch_options = vec!["Create from current HEAD", "Select branch (smart mode)"];
 
     let branch_choice = match Select::with_theme(&get_theme())
         .with_prompt("Select branch option")
@@ -558,32 +558,221 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         None => return Ok(false),
     };
 
-    let branch = if branch_choice == 1 {
-        // Show existing branches
-        let branches = manager.list_branches()?;
-        if branches.is_empty() {
-            utils::print_warning("No branches found, creating from HEAD");
-            None
-        } else {
-            println!();
-            match Select::with_theme(&get_theme())
-                .with_prompt("Select a branch")
-                .items(&branches)
-                .interact_opt()?
-            {
-                Some(selection) => Some(branches[selection].clone()),
-                None => return Ok(false),
+    let (branch, new_branch_name) = match branch_choice {
+        1 => {
+            // Select branch (smart mode)
+            let (local_branches, remote_branches) = manager.list_all_branches()?;
+            if local_branches.is_empty() && remote_branches.is_empty() {
+                utils::print_warning("No branches found, creating from HEAD");
+                (None, None)
+            } else {
+                // Get branch to worktree mapping
+                let branch_worktree_map = manager.get_branch_worktree_map()?;
+
+                // Create display items without section headers
+                let mut branch_items: Vec<String> = Vec::new();
+                let mut branch_refs: Vec<(String, bool)> = Vec::new(); // (branch_name, is_remote)
+
+                // Add local branches
+                for branch in &local_branches {
+                    if let Some(worktree) = branch_worktree_map.get(branch) {
+                        branch_items.push(format!(
+                            "  {} {}",
+                            branch.white(),
+                            format!("(in use by '{}')", worktree).bright_red()
+                        ));
+                    } else {
+                        branch_items.push(format!("  {}", branch.white()));
+                    }
+                    branch_refs.push((branch.clone(), false));
+                }
+
+                // Add remote branches with clear distinction
+                for branch in &remote_branches {
+                    let full_remote_name = format!("{}{}", GIT_REMOTE_PREFIX, branch);
+                    if let Some(worktree) = branch_worktree_map.get(&full_remote_name) {
+                        branch_items.push(format!(
+                            "↑ {} {}",
+                            full_remote_name.bright_blue(),
+                            format!("(in use by '{}')", worktree).bright_red()
+                        ));
+                    } else {
+                        branch_items.push(format!("↑ {}", full_remote_name.bright_blue()));
+                    }
+                    branch_refs.push((branch.clone(), true));
+                }
+
+                println!();
+                match Select::with_theme(&get_theme())
+                    .with_prompt("Select a branch")
+                    .items(&branch_items)
+                    .interact_opt()?
+                {
+                    Some(selection) => {
+                        let (selected_branch, is_remote) = &branch_refs[selection];
+
+                        if !is_remote {
+                            // Local branch - check if already checked out
+                            if let Some(worktree) = branch_worktree_map.get(selected_branch) {
+                                // Branch is in use, offer to create a new branch
+                                println!();
+                                utils::print_warning(&format!(
+                                    "Branch '{}' is already checked out in worktree '{}'",
+                                    selected_branch.yellow(),
+                                    worktree.bright_red()
+                                ));
+                                println!();
+
+                                let action_options = vec![
+                                    format!(
+                                        "Create new branch '{}' from '{}'",
+                                        name, selected_branch
+                                    ),
+                                    "Change the branch name".to_string(),
+                                    "Cancel".to_string(),
+                                ];
+
+                                match Select::with_theme(&get_theme())
+                                    .with_prompt("What would you like to do?")
+                                    .items(&action_options)
+                                    .interact_opt()?
+                                {
+                                    Some(0) => {
+                                        // Use worktree name as new branch name
+                                        (Some(selected_branch.clone()), Some(name.clone()))
+                                    }
+                                    Some(1) => {
+                                        // Ask for custom branch name
+                                        println!();
+                                        let new_branch = match input_esc_with_default(
+                                            &format!(
+                                                "Enter new branch name (base: {})",
+                                                selected_branch.yellow()
+                                            ),
+                                            &name,
+                                        ) {
+                                            Some(name) => name.trim().to_string(),
+                                            None => return Ok(false),
+                                        };
+
+                                        if new_branch.is_empty() {
+                                            utils::print_error("Branch name cannot be empty");
+                                            return Ok(false);
+                                        }
+
+                                        if local_branches.contains(&new_branch) {
+                                            utils::print_error(&format!(
+                                                "Branch '{}' already exists",
+                                                new_branch
+                                            ));
+                                            return Ok(false);
+                                        }
+
+                                        (Some(selected_branch.clone()), Some(new_branch))
+                                    }
+                                    _ => return Ok(false),
+                                }
+                            } else {
+                                (Some(selected_branch.clone()), None)
+                            }
+                        } else {
+                            // Remote branch - check if local branch with same name exists
+                            if local_branches.contains(selected_branch) {
+                                // Local branch with same name exists
+                                println!();
+                                utils::print_warning(&format!(
+                                    "A local branch '{}' already exists for remote '{}'",
+                                    selected_branch.yellow(),
+                                    format!("{}{}", GIT_REMOTE_PREFIX, selected_branch)
+                                        .bright_blue()
+                                ));
+                                println!();
+
+                                let use_local_option = if let Some(worktree) =
+                                    branch_worktree_map.get(selected_branch)
+                                {
+                                    format!(
+                                        "Use the existing local branch instead (in use by '{}')",
+                                        worktree.bright_red()
+                                    )
+                                } else {
+                                    "Use the existing local branch instead".to_string()
+                                };
+
+                                let action_options = vec![
+                                    format!(
+                                        "Create new branch '{}' from '{}{}'",
+                                        name, GIT_REMOTE_PREFIX, selected_branch
+                                    ),
+                                    use_local_option,
+                                    "Cancel".to_string(),
+                                ];
+
+                                match Select::with_theme(&get_theme())
+                                    .with_prompt("What would you like to do?")
+                                    .items(&action_options)
+                                    .interact_opt()?
+                                {
+                                    Some(0) => {
+                                        // Create new branch with worktree name
+                                        (
+                                            Some(format!(
+                                                "{}{}",
+                                                GIT_REMOTE_PREFIX, selected_branch
+                                            )),
+                                            Some(name.clone()),
+                                        )
+                                    }
+                                    Some(1) => {
+                                        // Use local branch instead - but check if it's already in use
+                                        if let Some(worktree) =
+                                            branch_worktree_map.get(selected_branch)
+                                        {
+                                            println!();
+                                            utils::print_error(&format!(
+                                                "Branch '{}' is already checked out in worktree '{}'",
+                                                selected_branch.yellow(),
+                                                worktree.bright_red()
+                                            ));
+                                            println!("Please select a different option.");
+                                            return Ok(false);
+                                        }
+                                        (Some(selected_branch.clone()), None)
+                                    }
+                                    _ => return Ok(false),
+                                }
+                            } else {
+                                // No conflict, proceed normally
+                                (
+                                    Some(format!("{}{}", GIT_REMOTE_PREFIX, selected_branch)),
+                                    None,
+                                )
+                            }
+                        }
+                    }
+                    None => return Ok(false),
+                }
             }
         }
-    } else {
-        None
+        _ => {
+            // Create from current HEAD
+            (None, None)
+        }
     };
 
     // Show preview
     println!();
     println!("{}", "Preview:".bright_white());
     println!("  {} {}", "Name:".bright_black(), final_name.bright_green());
-    if let Some(branch_name) = &branch {
+    if let Some(new_branch) = &new_branch_name {
+        let base_branch_name = branch.as_ref().unwrap();
+        println!(
+            "  {} {} (from {})",
+            "New Branch:".bright_black(),
+            new_branch.yellow(),
+            base_branch_name.bright_black()
+        );
+    } else if let Some(branch_name) = &branch {
         println!("  {} {}", "Branch:".bright_black(), branch_name.yellow());
     } else {
         println!("  {} Current HEAD", "From:".bright_black());
@@ -600,7 +789,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     pb.set_message("Creating worktree...");
     pb.enable_steady_tick(Duration::from_millis(100));
 
-    match manager.create_worktree(&final_name, branch.as_deref()) {
+    let result = if let Some(new_branch) = &new_branch_name {
+        // Create worktree with new branch from base branch
+        manager.create_worktree_with_new_branch(&final_name, new_branch, branch.as_ref().unwrap())
+    } else {
+        // Create worktree with existing branch or from HEAD
+        manager.create_worktree(&final_name, branch.as_deref())
+    };
+
+    match result {
         Ok(path) => {
             pb.finish_and_clear();
             utils::print_success(&format!(

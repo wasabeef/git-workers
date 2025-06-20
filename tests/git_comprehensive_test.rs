@@ -160,7 +160,7 @@ fn test_create_worktree_with_spaces_in_name() -> Result<()> {
 }
 
 #[test]
-fn test_list_branches_empty_repo() -> Result<()> {
+fn test_list_all_branches_empty_repo() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path().join("test-repo");
 
@@ -169,10 +169,13 @@ fn test_list_branches_empty_repo() -> Result<()> {
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
 
-    let branches = manager.list_branches()?;
+    let (local_branches, _) = manager.list_all_branches()?;
     // Should have at least the default branch
-    assert!(!branches.is_empty());
-    assert!(branches.contains(&"main".to_string()) || branches.contains(&"master".to_string()));
+    assert!(!local_branches.is_empty());
+    assert!(
+        local_branches.contains(&"main".to_string())
+            || local_branches.contains(&"master".to_string())
+    );
 
     Ok(())
 }
@@ -213,7 +216,7 @@ fn test_worktree_operations_sequence() -> Result<()> {
     assert!(worktrees.iter().any(|w| w.name == "feature"));
 
     // List branches
-    let branches = manager.list_branches()?;
+    let (branches, _) = manager.list_all_branches()?;
     assert!(branches.contains(&"feature-branch".to_string()));
 
     // Remove worktree
@@ -222,7 +225,7 @@ fn test_worktree_operations_sequence() -> Result<()> {
 
     // Delete branch
     manager.delete_branch("feature-branch")?;
-    let branches_after = manager.list_branches()?;
+    let (branches_after, _) = manager.list_all_branches()?;
     assert!(!branches_after.contains(&"feature-branch".to_string()));
 
     Ok(())

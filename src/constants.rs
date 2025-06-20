@@ -61,3 +61,10 @@ pub fn section_header(title: &str) -> String {
 pub fn header_separator() -> String {
     "=".repeat(HEADER_SEPARATOR_WIDTH).bright_blue().to_string()
 }
+
+// Git references
+pub const GIT_REMOTE_PREFIX: &str = "origin/";
+pub const GIT_DEFAULT_MAIN_WORKTREE: &str = "main";
+
+// Directory patterns
+pub const WORKTREES_SUBDIR: &str = "worktrees";
