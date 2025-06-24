@@ -109,9 +109,9 @@ pub struct HookContext {
 ///
 /// # Configuration Loading
 ///
-/// Configuration is loaded from the worktree's context rather than the
-/// current working directory. This ensures hooks use the correct configuration
-/// even when executed from a different directory.
+/// Configuration is loaded from the current directory where the command is executed,
+/// not from the newly created worktree path. This ensures hooks can be executed
+/// during worktree creation before the worktree has its own configuration file.
 ///
 /// # Error Handling
 ///
@@ -122,7 +122,9 @@ pub struct HookContext {
 /// Command execution errors (spawn failures) are also handled gracefully,
 /// allowing other hooks to continue even if one command fails to start.
 pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
-    let config = Config::load_from_path(&context.worktree_path)?;
+    // Always load config from the current directory where the command is executed,
+    // not from the newly created worktree which doesn't have a config yet
+    let config = Config::load()?;
 
     if let Some(commands) = config.hooks.get(hook_type) {
         println!("Running {} hooks...", hook_type);

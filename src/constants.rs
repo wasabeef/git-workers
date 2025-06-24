@@ -66,3 +66,6 @@ pub const GIT_DEFAULT_MAIN_WORKTREE: &str = "main";
 
 // Directory patterns
 pub const WORKTREES_SUBDIR: &str = "worktrees";
+
+// Configuration
+pub const CONFIG_FILE_NAME: &str = ".git-workers.toml";

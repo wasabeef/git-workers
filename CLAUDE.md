@@ -182,3 +182,42 @@ Since Git lacks native rename functionality:
 - Shell integration supports Bash/Zsh only
 - No Windows support (macOS and Linux only)
 - Recent breaking change: CLI arguments removed in favor of menu-only interface
+
+### Configuration Loading Priority
+
+**Bare repositories:**
+
+- Check main/master worktree directories only
+
+**Non-bare repositories:**
+
+1. Current directory (current worktree)
+2. Main/master worktree directories (fallback)
+
+## v0.3.0 File Copy Feature (Planning)
+
+### Overview
+
+Automatically copy ignored files (like `.env`) from main worktree to new worktrees during creation.
+
+### Configuration
+
+```toml
+[files]
+# Files to copy when creating new worktrees
+copy = [".env", ".env.local", "config/local.json"]
+
+# Optional: source directory (defaults to main worktree)
+# source = "path/to/source"
+
+# Optional: destination directory (defaults to worktree root)
+# destination = "path/to/dest"
+```
+
+### Implementation Plan
+
+1. **Config Structure**: Add `FilesConfig` struct with `copy`, `source`, and `destination` fields
+2. **File Detection**: Find main worktree directory for source files
+3. **Copy Logic**: In `post-create` hook phase, copy specified files
+4. **Error Handling**: Warn on missing files but don't fail worktree creation
+5. **Security**: Validate paths to prevent directory traversal attacks

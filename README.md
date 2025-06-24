@@ -72,11 +72,24 @@ Git Workers provides an interactive menu-driven interface. Simply run `gw` and n
 
 ### Configuration
 
-Git Workers uses `.git-workers.toml` for configuration. The file is loaded from (in order of priority):
+Git Workers uses `.git-workers.toml` for configuration. The loading strategy differs between bare and non-bare repositories:
 
-1. Current directory (useful for bare repository worktrees)
-2. Parent directory's main/master worktree (for organized worktree structures)
-3. Repository root
+#### Bare Repositories
+
+For bare repositories (e.g., `repo.git`), configuration is loaded from:
+
+1. Current directory
+2. Default branch directory in current directory (e.g., `./main/.git-workers.toml`)
+3. Detected worktree pattern (automatically finds where existing worktrees are organized)
+4. Common subdirectories (`branch/`, `worktrees/`)
+
+#### Non-bare Repositories
+
+For regular repositories, configuration is loaded from:
+
+1. Current directory
+2. Main repository directory (where `.git` is a directory)
+3. Parent directories' `main/` or `master/` subdirectories
 
 ```toml
 [repository]

@@ -27,7 +27,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
-use crate::constants::{section_header, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
+use crate::constants::{section_header, CONFIG_FILE_NAME, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
 use crate::input_esc_raw::{
@@ -1789,8 +1789,8 @@ pub fn edit_hooks() -> Result<()> {
             // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
             if let Some(parent) = cwd.parent() {
                 // Look for main or master directories in the parent
-                let main_path = parent.join("main").join(".git-workers.toml");
-                let master_path = parent.join("master").join(".git-workers.toml");
+                let main_path = parent.join("main").join(CONFIG_FILE_NAME);
+                let master_path = parent.join("master").join(CONFIG_FILE_NAME);
 
                 if main_path.exists() {
                     main_path
@@ -1801,7 +1801,7 @@ pub fn edit_hooks() -> Result<()> {
                     let workdir = repo
                         .workdir()
                         .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                    workdir.join(".git-workers.toml")
+                    workdir.join(CONFIG_FILE_NAME)
                 }
             } else {
                 // No parent directory, use workdir
@@ -1830,7 +1830,7 @@ pub fn edit_hooks() -> Result<()> {
         println!();
 
         let create = Confirm::with_theme(&get_theme())
-            .with_prompt("Create .git-workers.toml?")
+            .with_prompt(format!("Create {}?", CONFIG_FILE_NAME))
             .default(true)
             .interact_opt()?
             .unwrap_or(false);
@@ -1863,7 +1863,7 @@ post-switch = [
 "#;
 
             std::fs::write(&config_path, template)?;
-            utils::print_success("Created .git-workers.toml with template");
+            utils::print_success(&format!("Created {} with template", CONFIG_FILE_NAME));
         } else {
             return Ok(());
         }
