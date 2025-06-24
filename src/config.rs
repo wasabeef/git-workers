@@ -109,6 +109,7 @@ impl Config {
     ///     }
     /// }
     /// ```
+    #[allow(dead_code)]
     pub fn load() -> Result<Self> {
         if let Ok(repo) = git2::Repository::discover(".") {
             // Try to find .git-workers.toml in the default branch (main or master)
@@ -121,14 +122,105 @@ impl Config {
         Ok(Config::default())
     }
 
+    /// Loads configuration from a specific path context
+    ///
+    /// This method loads configuration using the specified directory as the base
+    /// path for the configuration lookup strategy. This is useful for hook execution
+    /// where the configuration should be loaded relative to the worktree path
+    /// rather than the current working directory.
+    ///
+    /// # Process
+    ///
+    /// 1. Discovers Git repository from the target path
+    /// 2. Applies the configuration lookup strategy using the target path as context
+    /// 3. Does not modify the current working directory (thread-safe)
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The directory path to use as context for configuration loading
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the loaded configuration or a default configuration
+    /// if no config file is found.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use git_workers::config::Config;
+    /// use std::path::Path;
+    ///
+    /// let worktree_path = Path::new("/path/to/worktree");
+    /// let config = Config::load_from_path(worktree_path)
+    ///     .expect("Failed to load config from worktree path");
+    /// ```
+    pub fn load_from_path(path: &std::path::Path) -> Result<Self> {
+        if let Ok(repo) = git2::Repository::discover(path) {
+            if let Some(config) = Self::load_from_path_context(path, &repo)? {
+                return Ok(config);
+            }
+        }
+
+        // Return default config if no repo found
+        Ok(Config::default())
+    }
+
+    /// Loads configuration from a specific path context
+    ///
+    /// This is the thread-safe implementation that loads configuration without
+    /// changing the current working directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The directory path to use as context
+    /// * `repo` - The Git repository reference
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(config))` - Configuration was found and loaded
+    /// * `Ok(None)` - No configuration file exists
+    /// * `Err(...)` - An error occurred while loading
+    fn load_from_path_context(
+        base_path: &std::path::Path,
+        repo: &git2::Repository,
+    ) -> Result<Option<Self>> {
+        // Check parent directories first for main/master config (highest priority)
+        if let Some(parent) = base_path.parent() {
+            let main_path = parent.join("main").join(".git-workers.toml");
+            let master_path = parent.join("master").join(".git-workers.toml");
+
+            if main_path.exists() {
+                return Self::load_from_file(&main_path, repo);
+            } else if master_path.exists() {
+                return Self::load_from_file(&master_path, repo);
+            }
+        }
+
+        // Then check the base path directory
+        let current_config = base_path.join(".git-workers.toml");
+        if current_config.exists() {
+            return Self::load_from_file(&current_config, repo);
+        }
+
+        // If not found, check the repository working directory
+        if let Some(workdir) = repo.workdir() {
+            let config_path = workdir.join(".git-workers.toml");
+            if config_path.exists() {
+                return Self::load_from_file(&config_path, repo);
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Loads configuration from the default branch (main or master)
     ///
     /// This method implements the configuration lookup strategy:
     ///
-    /// 1. **Current directory**: First checks the current directory for `.git-workers.toml`
+    /// 1. **Parent main/master**: First looks for config in the main/master worktree
+    ///    in the parent directory (for worktree structures)
+    /// 2. **Current directory**: Then checks the current directory for `.git-workers.toml`
     ///    (useful for bare repository worktrees)
-    /// 2. **Parent main/master**: If in a worktree structure, looks for config in the
-    ///    main/master worktree in the parent directory
     /// 3. **Repository root**: Falls back to checking the current repository's
     ///    working directory
     ///
@@ -144,15 +236,12 @@ impl Config {
     /// * `Ok(Some(config))` - Configuration was found and loaded
     /// * `Ok(None)` - No configuration file exists
     /// * `Err(...)` - An error occurred while loading
+    #[allow(dead_code)]
     fn load_from_default_branch(repo: &git2::Repository) -> Result<Option<Self>> {
         // First, check current directory (useful for bare repo worktrees)
         if let Ok(cwd) = std::env::current_dir() {
-            let current_config = cwd.join(".git-workers.toml");
-            if current_config.exists() {
-                return Self::load_from_file(&current_config, repo);
-            }
-
             // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
+            // Check parent directories first for main/master config
             if let Some(parent) = cwd.parent() {
                 // Look for main or master directories in the parent
                 let main_path = parent.join("main").join(".git-workers.toml");
@@ -163,6 +252,12 @@ impl Config {
                 } else if master_path.exists() {
                     return Self::load_from_file(&master_path, repo);
                 }
+            }
+
+            // Then check current directory
+            let current_config = cwd.join(".git-workers.toml");
+            if current_config.exists() {
+                return Self::load_from_file(&current_config, repo);
             }
         }
 

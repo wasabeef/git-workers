@@ -33,7 +33,6 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Config;
-use crate::constants::{LARGE_OUTPUT_LIMIT, OUTPUT_TRUNCATE_LIMIT};
 
 /// Context information passed to hook commands
 ///
@@ -108,13 +107,22 @@ pub struct HookContext {
 /// execute_hooks("post-create", &context).ok();
 /// ```
 ///
+/// # Configuration Loading
+///
+/// Configuration is loaded from the worktree's context rather than the
+/// current working directory. This ensures hooks use the correct configuration
+/// even when executed from a different directory.
+///
 /// # Error Handling
 ///
 /// Hook failures are logged to stderr but do not stop execution of
 /// subsequent hooks or the main operation. This ensures that a failing
 /// hook doesn't prevent worktree operations from completing.
+///
+/// Command execution errors (spawn failures) are also handled gracefully,
+/// allowing other hooks to continue even if one command fails to start.
 pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
-    let config = Config::load()?;
+    let config = Config::load_from_path(&context.worktree_path)?;
 
     if let Some(commands) = config.hooks.get(hook_type) {
         println!("Running {} hooks...", hook_type);
@@ -132,28 +140,35 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
 
             // Execute the command in a shell for maximum compatibility
             // This allows complex commands with pipes, redirects, etc.
-            let output = Command::new("sh")
+            // Use spawn() and wait() to allow real-time output streaming
+            match Command::new("sh")
                 .arg("-c")
                 .arg(&expanded_cmd)
                 .current_dir(&context.worktree_path)
-                .output()?;
-
-            if !output.status.success() {
-                // Log hook failures but don't stop execution
-                // This prevents a misconfigured hook from breaking worktree operations
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                // Limit error output to prevent buffer overflow
-                let error_msg = if stderr.len() > OUTPUT_TRUNCATE_LIMIT {
-                    format!("{}... (truncated)", &stderr[..OUTPUT_TRUNCATE_LIMIT])
-                } else {
-                    stderr.to_string()
-                };
-                eprintln!("Hook command failed: {}", error_msg);
-            }
-
-            // Also limit stdout output if it's too large
-            if output.stdout.len() > LARGE_OUTPUT_LIMIT {
-                println!("    (output truncated, {} bytes)", output.stdout.len());
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .spawn()
+            {
+                Ok(mut child) => {
+                    match child.wait() {
+                        Ok(status) => {
+                            if !status.success() {
+                                // Log hook failures but don't stop execution
+                                // This prevents a misconfigured hook from breaking worktree operations
+                                eprintln!(
+                                    "Hook command failed with exit code: {:?}",
+                                    status.code()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to wait for hook command: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to execute hook command: {}", e);
+                }
             }
         }
     }

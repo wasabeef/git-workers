@@ -54,7 +54,6 @@ cargo check --all-features
 cargo doc --no-deps --open
 ```
 
-
 ### Installation
 
 ```bash
@@ -71,10 +70,12 @@ source /path/to/git-workers/shell/gw.sh
 ## Recent Changes
 
 ### Branch Option Simplification
+
 - Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
 - Smart mode automatically handles branch conflicts and offers appropriate actions
 
 ### Key Methods Added/Modified
+
 - **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
 - **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)

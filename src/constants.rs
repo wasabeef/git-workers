@@ -13,8 +13,6 @@ pub const MSG_SWITCH_FILE_WARNING: &str = "Warning: Failed to write switch file:
 // UI Formatting
 pub const SEPARATOR_WIDTH: usize = 40;
 pub const HEADER_SEPARATOR_WIDTH: usize = 50;
-pub const OUTPUT_TRUNCATE_LIMIT: usize = 1000;
-pub const LARGE_OUTPUT_LIMIT: usize = 10000;
 
 // Default Values
 pub const DEFAULT_BRANCH_UNKNOWN: &str = "unknown";
