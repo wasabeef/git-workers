@@ -69,6 +69,13 @@ source /path/to/git-workers/shell/gw.sh
 
 ## Recent Changes
 
+### v0.3.0 File Copy Feature
+
+- Automatically copy gitignored files (like `.env`) from main worktree to new worktrees
+- Configurable via `[files]` section in `.git-workers.toml`
+- Security validation to prevent path traversal attacks
+- Follows same discovery priority as configuration files
+
 ### Branch Option Simplification
 
 - Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
@@ -79,6 +86,7 @@ source /path/to/git-workers/shell/gw.sh
 - **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
 - **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
+- **`copy_configured_files()`**: Copies files specified in config to new worktrees
 
 ## Architecture
 
@@ -96,6 +104,7 @@ src/
 ├── repository_info.rs   # Repository information display
 ├── input_esc_raw.rs     # Custom input handling with ESC support
 ├── constants.rs         # Centralized constants (strings, formatting)
+├── file_copy.rs         # File copy functionality for gitignored files
 └── utils.rs             # Common utilities (error display, etc.)
 ```
 
@@ -194,7 +203,7 @@ Since Git lacks native rename functionality:
 1. Current directory (current worktree)
 2. Main/master worktree directories (fallback)
 
-## v0.3.0 File Copy Feature (Planning)
+## v0.3.0 File Copy Feature (Implemented)
 
 ### Overview
 
@@ -209,15 +218,18 @@ copy = [".env", ".env.local", "config/local.json"]
 
 # Optional: source directory (defaults to main worktree)
 # source = "path/to/source"
-
-# Optional: destination directory (defaults to worktree root)
-# destination = "path/to/dest"
 ```
 
-### Implementation Plan
+### Implementation Details
 
-1. **Config Structure**: Add `FilesConfig` struct with `copy`, `source`, and `destination` fields
-2. **File Detection**: Find main worktree directory for source files
-3. **Copy Logic**: In `post-create` hook phase, copy specified files
-4. **Error Handling**: Warn on missing files but don't fail worktree creation
-5. **Security**: Validate paths to prevent directory traversal attacks
+1. **Config Structure**: `FilesConfig` struct with `copy` and `source` fields (destination is always worktree root)
+2. **File Detection**: Uses same priority as config file discovery for finding source files
+3. **Copy Logic**: Executes after worktree creation but before post-create hooks
+4. **Error Handling**: Warns on missing files but continues with worktree creation
+5. **Security**: Validates paths to prevent directory traversal attacks
+6. **Features**:
+   - Supports both files and directories
+   - Recursive directory copying
+   - Symlink detection with warnings
+   - Maximum directory depth limit (50 levels)
+   - Preserves file permissions

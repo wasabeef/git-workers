@@ -75,7 +75,11 @@ pub fn get_repository_info() -> String {
                         return format!("{} ({})", parent_name, worktree_name);
                     }
                 }
-            } else if repo.path().join("worktrees").exists() {
+            } else if repo
+                .path()
+                .join(crate::constants::WORKTREES_SUBDIR)
+                .exists()
+            {
                 // This is likely the main worktree of a repository with worktrees
                 // The presence of a "worktrees" directory indicates this is a main repo
                 if let Some(repo_path) = repo.workdir() {

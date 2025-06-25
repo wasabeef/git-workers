@@ -606,10 +606,10 @@ impl GitWorktreeManager {
                     workdir
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .unwrap_or("main")
+                        .unwrap_or(crate::constants::DEFAULT_BRANCH_MAIN)
                         .to_string()
                 } else {
-                    "main".to_string()
+                    crate::constants::DEFAULT_BRANCH_MAIN.to_string()
                 };
                 map.insert(shorthand.to_string(), main_worktree_name);
             }
@@ -1144,8 +1144,12 @@ impl GitWorktreeManager {
             self.repo.path().to_path_buf()
         };
 
-        let old_worktree_git_dir = git_common_dir.join("worktrees").join(old_name);
-        let new_worktree_git_dir = git_common_dir.join("worktrees").join(new_name);
+        let old_worktree_git_dir = git_common_dir
+            .join(crate::constants::WORKTREES_SUBDIR)
+            .join(old_name);
+        let new_worktree_git_dir = git_common_dir
+            .join(crate::constants::WORKTREES_SUBDIR)
+            .join(new_name);
 
         if old_worktree_git_dir.exists() {
             fs::rename(&old_worktree_git_dir, &new_worktree_git_dir)?;

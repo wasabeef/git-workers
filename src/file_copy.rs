@@ -115,11 +115,10 @@ fn determine_source_directory(
     }
 }
 
-/// Finds the source directory for file copying
+/// Finds the main worktree directory for file copying
 ///
-/// Uses the same priority as .git-workers.toml discovery:
-/// - For bare repositories: follows the same search pattern
-/// - For non-bare repositories: follows the same search pattern
+/// This function follows the same discovery logic as configuration file loading,
+/// ensuring consistency between config and file copy operations.
 fn find_main_worktree(manager: &GitWorktreeManager) -> Result<PathBuf> {
     let repo = manager.repo();
 
@@ -140,7 +139,7 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
         .head()
         .ok()
         .and_then(|h| h.shorthand().map(String::from))
-        .unwrap_or_else(|| "main".to_string());
+        .unwrap_or_else(|| crate::constants::DEFAULT_BRANCH_MAIN.to_string());
 
     if let Ok(cwd) = std::env::current_dir() {
         // 1. First check current directory
@@ -155,17 +154,8 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
         }
 
         // Also check main/master if different from default
-        if default_branch != "main" {
-            let main_dir = cwd.join("main");
-            if main_dir.exists() && main_dir.is_dir() {
-                return Ok(main_dir);
-            }
-        }
-        if default_branch != "master" {
-            let master_dir = cwd.join("master");
-            if master_dir.exists() && master_dir.is_dir() {
-                return Ok(master_dir);
-            }
+        if let Some(dir) = crate::utils::find_default_branch_directory(&cwd, &default_branch) {
+            return Ok(dir);
         }
 
         // 3. Try to detect worktree pattern
@@ -199,17 +189,11 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
                         }
 
                         // Fallback to main/master
-                        if default_branch != "main" {
-                            let main_dir = first_parent.join("main");
-                            if main_dir.exists() && main_dir.is_dir() {
-                                return Ok(main_dir);
-                            }
-                        }
-                        if default_branch != "master" {
-                            let master_dir = first_parent.join("master");
-                            if master_dir.exists() && master_dir.is_dir() {
-                                return Ok(master_dir);
-                            }
+                        if let Some(dir) = crate::utils::find_default_branch_directory(
+                            first_parent,
+                            &default_branch,
+                        ) {
+                            return Ok(dir);
                         }
                     }
                 }
@@ -217,7 +201,10 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
         }
 
         // 4. Fallback: Check common subdirectories
-        for subdir in &["branch", "worktrees"] {
+        for subdir in &[
+            crate::constants::BRANCH_SUBDIR,
+            crate::constants::WORKTREES_SUBDIR,
+        ] {
             let branch_dir = cwd.join(subdir).join(&default_branch);
             if branch_dir.exists() && branch_dir.is_dir() {
                 return Ok(branch_dir);
@@ -265,7 +252,10 @@ fn find_source_in_regular_repo(repo: &git2::Repository) -> Result<PathBuf> {
 
         // 3. Look for main/master in parent directories
         if let Some(parent) = cwd.parent() {
-            if parent.file_name().is_some_and(|n| n == "worktrees") {
+            if parent
+                .file_name()
+                .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
+            {
                 // We're in worktrees subdirectory
                 if let Some(repo_root) = parent.parent() {
                     if repo_root.join(".git").is_dir() {
@@ -273,24 +263,24 @@ fn find_source_in_regular_repo(repo: &git2::Repository) -> Result<PathBuf> {
                     }
 
                     // Check main/master subdirectories
-                    let main_dir = repo_root.join("main");
+                    let main_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MAIN);
                     if main_dir.exists() && main_dir.is_dir() {
                         return Ok(main_dir);
                     }
 
-                    let master_dir = repo_root.join("master");
+                    let master_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MASTER);
                     if master_dir.exists() && master_dir.is_dir() {
                         return Ok(master_dir);
                     }
                 }
             } else {
                 // Check parent for main/master
-                let main_dir = parent.join("main");
+                let main_dir = parent.join(crate::constants::DEFAULT_BRANCH_MAIN);
                 if main_dir.exists() && main_dir.is_dir() {
                     return Ok(main_dir);
                 }
 
-                let master_dir = parent.join("master");
+                let master_dir = parent.join(crate::constants::DEFAULT_BRANCH_MASTER);
                 if master_dir.exists() && master_dir.is_dir() {
                     return Ok(master_dir);
                 }

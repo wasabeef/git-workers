@@ -1811,8 +1811,12 @@ pub fn edit_hooks() -> Result<()> {
             // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
             if let Some(parent) = cwd.parent() {
                 // Look for main or master directories in the parent
-                let main_path = parent.join("main").join(CONFIG_FILE_NAME);
-                let master_path = parent.join("master").join(CONFIG_FILE_NAME);
+                let main_path = parent
+                    .join(crate::constants::DEFAULT_BRANCH_MAIN)
+                    .join(CONFIG_FILE_NAME);
+                let master_path = parent
+                    .join(crate::constants::DEFAULT_BRANCH_MASTER)
+                    .join(CONFIG_FILE_NAME);
 
                 if main_path.exists() {
                     main_path
@@ -1830,14 +1834,14 @@ pub fn edit_hooks() -> Result<()> {
                 let workdir = repo
                     .workdir()
                     .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                workdir.join(".git-workers.toml")
+                workdir.join(CONFIG_FILE_NAME)
             }
         } else {
             // Can't get current directory, use workdir
             let workdir = repo
                 .workdir()
                 .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-            workdir.join(".git-workers.toml")
+            workdir.join(CONFIG_FILE_NAME)
         }
     } else {
         utils::print_error("Not in a git repository");
