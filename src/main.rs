@@ -47,6 +47,7 @@ use std::io::{self, Write};
 mod commands;
 mod config;
 mod constants;
+mod file_copy;
 mod git;
 mod hooks;
 mod input_esc_raw;

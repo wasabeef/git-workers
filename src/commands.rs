@@ -27,7 +27,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
+use crate::config::Config;
 use crate::constants::{section_header, CONFIG_FILE_NAME, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
+use crate::file_copy;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
 use crate::input_esc_raw::{
@@ -805,6 +807,26 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 name.bright_green(),
                 path.display()
             ));
+
+            // Copy configured files
+            let config = Config::load()?;
+            if !config.files.copy.is_empty() {
+                println!();
+                println!("Copying configured files...");
+                match file_copy::copy_configured_files(&config.files, &path, manager) {
+                    Ok(copied) => {
+                        if !copied.is_empty() {
+                            utils::print_success(&format!("Copied {} files", copied.len()));
+                            for file in &copied {
+                                println!("  ✓ {}", file);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        utils::print_warning(&format!("Failed to copy files: {}", e));
+                    }
+                }
+            }
 
             // Execute post-create hooks
             if let Err(e) = hooks::execute_hooks(
@@ -1859,6 +1881,18 @@ pre-remove = [
 # Run after switching to a worktree
 post-switch = [
     # "echo 'Switched to {{worktree_name}}'"
+]
+
+[files]
+# Optional: Specify a custom source directory
+# If not specified, automatically finds the main worktree
+# source = "/path/to/custom/source"
+# source = "./templates"  # Relative to repository root
+
+# Files to copy when creating new worktrees
+copy = [
+    # ".env",
+    # ".env.local"
 ]
 "#;
 

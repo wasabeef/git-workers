@@ -19,6 +19,7 @@ fn test_config_with_hooks() {
     let config = Config {
         repository: RepositoryConfig::default(),
         hooks,
+        files: Default::default(),
     };
 
     assert_eq!(config.hooks.len(), 1);
@@ -33,6 +34,7 @@ fn test_config_with_repository() {
             url: Some("https://github.com/owner/repo.git".to_string()),
         },
         hooks: HashMap::new(),
+        files: Default::default(),
     };
 
     assert_eq!(

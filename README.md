@@ -117,6 +117,19 @@ pre-remove = [
 post-switch = [
     "echo '🤖 Switched to: {{worktree_name}}'"
 ]
+
+[files]
+# Optional: Specify a custom source directory
+# If not specified, automatically finds the main worktree
+# source = "/path/to/custom/source"
+# source = "./templates"  # Relative to repository root
+
+# Files to copy when creating new worktrees
+# These are typically gitignored files needed for development
+copy = [
+    ".env",
+    ".env.local"
+]
 ```
 
 ### Hook Variables

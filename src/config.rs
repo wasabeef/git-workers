@@ -70,6 +70,41 @@ pub struct Config {
     /// - `{{worktree_path}}`: Replaced with the full worktree path
     #[serde(default)]
     pub hooks: HashMap<String, Vec<String>>,
+
+    /// File copy configuration
+    #[serde(default)]
+    pub files: FilesConfig,
+}
+
+/// File copy configuration for worktree creation
+///
+/// This configuration allows specifying files that should be copied
+/// from the main worktree to new worktrees during creation.
+/// This is useful for files that are gitignored but necessary for
+/// the project to function (e.g., `.env` files).
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct FilesConfig {
+    /// List of files to copy when creating a new worktree
+    ///
+    /// Paths are relative to the source directory (usually main worktree).
+    /// Supports both files and directories.
+    ///
+    /// # Example
+    ///
+    /// ```toml
+    /// [files]
+    /// # source = "./templates"  # Optional: custom source directory
+    /// copy = [".env", ".env.local", "config/local.json"]
+    /// ```
+    #[serde(default)]
+    pub copy: Vec<String>,
+
+    /// Source directory for files to copy
+    ///
+    /// If not specified, defaults to the main worktree directory.
+    /// Must be an absolute path or relative to the repository root.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Repository-specific configuration

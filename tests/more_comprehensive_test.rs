@@ -138,6 +138,7 @@ mod config_tests {
         let config = Config {
             repository: git_workers::config::RepositoryConfig::default(),
             hooks,
+            files: Default::default(),
         };
 
         let debug_str = format!("{:?}", config);
