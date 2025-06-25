@@ -70,6 +70,41 @@ pub struct Config {
     /// - `{{worktree_path}}`: Replaced with the full worktree path
     #[serde(default)]
     pub hooks: HashMap<String, Vec<String>>,
+
+    /// File copy configuration
+    #[serde(default)]
+    pub files: FilesConfig,
+}
+
+/// File copy configuration for worktree creation
+///
+/// This configuration allows specifying files that should be copied
+/// from the main worktree to new worktrees during creation.
+/// This is useful for files that are gitignored but necessary for
+/// the project to function (e.g., `.env` files).
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct FilesConfig {
+    /// List of files to copy when creating a new worktree
+    ///
+    /// Paths are relative to the source directory (usually main worktree).
+    /// Supports both files and directories.
+    ///
+    /// # Example
+    ///
+    /// ```toml
+    /// [files]
+    /// # source = "./templates"  # Optional: custom source directory
+    /// copy = [".env", ".env.local", "config/local.json"]
+    /// ```
+    #[serde(default)]
+    pub copy: Vec<String>,
+
+    /// Source directory for files to copy
+    ///
+    /// If not specified, defaults to the main worktree directory.
+    /// Must be an absolute path or relative to the repository root.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Repository-specific configuration
@@ -209,10 +244,12 @@ impl Config {
             // For bare repositories:
             // Get the default branch name from HEAD
             let default_branch = if let Ok(head) = repo.head() {
-                head.shorthand().unwrap_or("main").to_string()
+                head.shorthand()
+                    .unwrap_or(crate::constants::DEFAULT_BRANCH_MAIN)
+                    .to_string()
             } else {
                 // Fallback to common default branch names
-                "main".to_string()
+                crate::constants::DEFAULT_BRANCH_MAIN.to_string()
             };
 
             if let Ok(cwd) = std::env::current_dir() {
@@ -229,17 +266,12 @@ impl Config {
                 }
 
                 // Also check main/master if different from default
-                if default_branch != "main" {
-                    let main_config = cwd.join("main").join(CONFIG_FILE_NAME);
-                    if main_config.exists() {
-                        return Self::load_from_file(&main_config, repo);
-                    }
-                }
-                if default_branch != "master" {
-                    let master_config = cwd.join("master").join(CONFIG_FILE_NAME);
-                    if master_config.exists() {
-                        return Self::load_from_file(&master_config, repo);
-                    }
+                if let Some(config_path) = crate::utils::find_config_in_default_branches(
+                    &cwd,
+                    &default_branch,
+                    CONFIG_FILE_NAME,
+                ) {
+                    return Self::load_from_file(&config_path, repo);
                 }
 
                 // 2. Try to detect worktree pattern by listing existing worktrees
@@ -277,19 +309,14 @@ impl Config {
                                 }
 
                                 // Fallback to main/master
-                                if default_branch != "main" {
-                                    let main_config =
-                                        first_parent.join("main").join(CONFIG_FILE_NAME);
-                                    if main_config.exists() {
-                                        return Self::load_from_file(&main_config, repo);
-                                    }
-                                }
-                                if default_branch != "master" {
-                                    let master_config =
-                                        first_parent.join("master").join(CONFIG_FILE_NAME);
-                                    if master_config.exists() {
-                                        return Self::load_from_file(&master_config, repo);
-                                    }
+                                if let Some(config_path) =
+                                    crate::utils::find_config_in_default_branches(
+                                        first_parent,
+                                        &default_branch,
+                                        CONFIG_FILE_NAME,
+                                    )
+                                {
+                                    return Self::load_from_file(&config_path, repo);
                                 }
                             }
                         }
@@ -297,7 +324,10 @@ impl Config {
                 }
 
                 // 3. Fallback: Check common subdirectories
-                for subdir in &["branch", "worktrees"] {
+                for subdir in &[
+                    crate::constants::BRANCH_SUBDIR,
+                    crate::constants::WORKTREES_SUBDIR,
+                ] {
                     let branch_path = cwd
                         .join(subdir)
                         .join(&default_branch)
@@ -329,7 +359,10 @@ impl Config {
 
                 // 2. Then check main/master default branch worktree
                 // Check if current directory is named "worktrees" or inside a worktree
-                if cwd.file_name().is_some_and(|n| n == "worktrees") {
+                if cwd
+                    .file_name()
+                    .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
+                {
                     // We're in the worktrees directory itself
                     if let Some(parent) = cwd.parent() {
                         let main_config = parent.join(CONFIG_FILE_NAME);
@@ -343,7 +376,10 @@ impl Config {
                         // This is a linked worktree, find the main/master worktree
                         if let Some(parent) = cwd.parent() {
                             // Check if we're in a worktrees subdirectory
-                            if parent.file_name().is_some_and(|n| n == "worktrees") {
+                            if parent
+                                .file_name()
+                                .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
+                            {
                                 // Go up one more level to repository root
                                 if let Some(repo_root) = parent.parent() {
                                     // Check for main worktree
@@ -353,25 +389,32 @@ impl Config {
                                     }
 
                                     // Also check main/master subdirectories
-                                    let main_path = repo_root.join("main").join(CONFIG_FILE_NAME);
+                                    let main_path = repo_root
+                                        .join(crate::constants::DEFAULT_BRANCH_MAIN)
+                                        .join(CONFIG_FILE_NAME);
                                     if main_path.exists() {
                                         return Self::load_from_file(&main_path, repo);
                                     }
 
-                                    let master_path =
-                                        repo_root.join("master").join(CONFIG_FILE_NAME);
+                                    let master_path = repo_root
+                                        .join(crate::constants::DEFAULT_BRANCH_MASTER)
+                                        .join(CONFIG_FILE_NAME);
                                     if master_path.exists() {
                                         return Self::load_from_file(&master_path, repo);
                                     }
                                 }
                             } else {
                                 // Not in worktrees subdirectory, check parent for main/master
-                                let main_path = parent.join("main").join(CONFIG_FILE_NAME);
+                                let main_path = parent
+                                    .join(crate::constants::DEFAULT_BRANCH_MAIN)
+                                    .join(CONFIG_FILE_NAME);
                                 if main_path.exists() {
                                     return Self::load_from_file(&main_path, repo);
                                 }
 
-                                let master_path = parent.join("master").join(CONFIG_FILE_NAME);
+                                let master_path = parent
+                                    .join(crate::constants::DEFAULT_BRANCH_MASTER)
+                                    .join(CONFIG_FILE_NAME);
                                 if master_path.exists() {
                                     return Self::load_from_file(&master_path, repo);
                                 }

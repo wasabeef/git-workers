@@ -20,14 +20,14 @@
 use anyhow::Result;
 use colored::*;
 use console::Term;
-use dialoguer::{Confirm, MultiSelect, Select};
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
+use dialoguer::{Confirm, FuzzySelect, MultiSelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
+use crate::config::Config;
 use crate::constants::{section_header, CONFIG_FILE_NAME, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
+use crate::file_copy;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
 use crate::input_esc_raw::{
@@ -316,63 +316,15 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         return Ok(false);
     }
 
-    // Get search query
     println!();
     println!("{}", section_header("Search Worktrees"));
     println!();
 
-    let search_query = match input_esc("Enter search query (name or branch)") {
-        Some(query) => query.trim().to_string(),
-        None => return Ok(false),
-    };
-
-    if search_query.is_empty() {
-        return Ok(false);
-    }
-
-    // Perform fuzzy search
-    let matcher = SkimMatcherV2::default();
-    let mut results: Vec<(i64, String, &WorktreeInfo)> = worktrees
+    // Create items for fuzzy search
+    let items: Vec<String> = worktrees
         .iter()
-        .filter_map(|wt| {
-            let name_score = matcher.fuzzy_match(&wt.name, &search_query).unwrap_or(0);
-            let branch_score = matcher.fuzzy_match(&wt.branch, &search_query).unwrap_or(0);
-            let max_score = name_score.max(branch_score);
-
-            if max_score > 0 {
-                let display = format!("{} ({})", wt.name, wt.branch);
-                Some((max_score, display, wt))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if results.is_empty() {
-        println!();
-        println!("{}", "• No matching worktrees found.".yellow());
-        println!();
-        press_any_key_to_continue()?;
-        return Ok(false);
-    }
-
-    // Sort by score (highest first)
-    results.sort_by(|a, b| b.0.cmp(&a.0));
-
-    // Display results
-    println!();
-    println!(
-        "{} Found {} matching worktree{}:",
-        "•".bright_green(),
-        results.len(),
-        if results.len() == 1 { "" } else { "s" }
-    );
-    println!();
-
-    let items: Vec<String> = results
-        .iter()
-        .map(|(score, display, wt)| {
-            let mut item = format!("{} [score: {}]", display, score);
+        .map(|wt| {
+            let mut item = format!("{} ({})", wt.name, wt.branch);
             if wt.is_current {
                 item.push_str(" (current)");
             }
@@ -380,8 +332,10 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         })
         .collect();
 
-    let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select a worktree to switch to (ESC to cancel)")
+    // Use FuzzySelect for interactive search
+    println!("Type to search worktrees (fuzzy search enabled):");
+    let selection = match FuzzySelect::with_theme(&get_theme())
+        .with_prompt("Select a worktree to switch to")
         .items(&items)
         .interact_opt()?
     {
@@ -389,7 +343,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         None => return Ok(false),
     };
 
-    let selected_worktree = results[selection].2;
+    let selected_worktree = &worktrees[selection];
 
     if selected_worktree.is_current {
         println!();
@@ -569,47 +523,54 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Get branch to worktree mapping
                 let branch_worktree_map = manager.get_branch_worktree_map()?;
 
-                // Create display items without section headers
+                // Create items for fuzzy search (plain text for search, formatted for display)
                 let mut branch_items: Vec<String> = Vec::new();
                 let mut branch_refs: Vec<(String, bool)> = Vec::new(); // (branch_name, is_remote)
 
-                // Add local branches
+                // Add local branches with laptop icon (laptop emoji takes 2 columns)
                 for branch in &local_branches {
                     if let Some(worktree) = branch_worktree_map.get(branch) {
-                        branch_items.push(format!(
-                            "  {} {}",
-                            branch.white(),
-                            format!("(in use by '{}')", worktree).bright_red()
-                        ));
+                        branch_items.push(format!("💻 {} (in use by '{}')", branch, worktree));
                     } else {
-                        branch_items.push(format!("  {}", branch.white()));
+                        branch_items.push(format!("💻 {}", branch));
                     }
                     branch_refs.push((branch.clone(), false));
                 }
 
-                // Add remote branches with clear distinction
+                // Add remote branches with cloud icon (cloud emoji should align with laptop)
                 for branch in &remote_branches {
                     let full_remote_name = format!("{}{}", GIT_REMOTE_PREFIX, branch);
                     if let Some(worktree) = branch_worktree_map.get(&full_remote_name) {
                         branch_items.push(format!(
-                            "↑ {} {}",
-                            full_remote_name.bright_blue(),
-                            format!("(in use by '{}')", worktree).bright_red()
+                            "⛅️ {} (in use by '{}')",
+                            full_remote_name, worktree
                         ));
                     } else {
-                        branch_items.push(format!("↑ {}", full_remote_name.bright_blue()));
+                        branch_items.push(format!("⛅️ {}", full_remote_name));
                     }
                     branch_refs.push((branch.clone(), true));
                 }
 
                 println!();
-                match Select::with_theme(&get_theme())
-                    .with_prompt("Select a branch")
-                    .items(&branch_items)
-                    .interact_opt()?
-                {
+
+                // Use FuzzySelect for better search experience when there are many branches
+                let selection_result = if branch_items.len() > 10 {
+                    println!("Type to search branches (fuzzy search enabled):");
+                    FuzzySelect::with_theme(&get_theme())
+                        .with_prompt("Select a branch")
+                        .items(&branch_items)
+                        .interact_opt()?
+                } else {
+                    Select::with_theme(&get_theme())
+                        .with_prompt("Select a branch")
+                        .items(&branch_items)
+                        .interact_opt()?
+                };
+
+                match selection_result {
                     Some(selection) => {
-                        let (selected_branch, is_remote) = &branch_refs[selection];
+                        let (selected_branch, is_remote): (&String, &bool) =
+                            (&branch_refs[selection].0, &branch_refs[selection].1);
 
                         if !is_remote {
                             // Local branch - check if already checked out
@@ -805,6 +766,26 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 name.bright_green(),
                 path.display()
             ));
+
+            // Copy configured files
+            let config = Config::load()?;
+            if !config.files.copy.is_empty() {
+                println!();
+                println!("Copying configured files...");
+                match file_copy::copy_configured_files(&config.files, &path, manager) {
+                    Ok(copied) => {
+                        if !copied.is_empty() {
+                            utils::print_success(&format!("Copied {} files", copied.len()));
+                            for file in &copied {
+                                println!("  ✓ {}", file);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        utils::print_warning(&format!("Failed to copy files: {}", e));
+                    }
+                }
+            }
 
             // Execute post-create hooks
             if let Err(e) = hooks::execute_hooks(
@@ -1728,6 +1709,215 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     Ok(())
 }
 
+/// Finds the configuration file path using the same logic as Config::load()
+///
+/// This function follows the exact same discovery order as Config::load_from_main_repository_only()
+/// to ensure consistency across the application.
+///
+/// # Arguments
+///
+/// * `repo` - The Git repository reference
+///
+/// # Returns
+///
+/// The path where the configuration file should be located or created.
+fn find_config_file_path(repo: &git2::Repository) -> Result<std::path::PathBuf> {
+    use crate::utils::find_default_branch_directory;
+
+    if repo.is_bare() {
+        // For bare repositories - same logic as Config::load_from_main_repository_only()
+        let default_branch = if let Ok(head) = repo.head() {
+            head.shorthand()
+                .unwrap_or(crate::constants::DEFAULT_BRANCH_MAIN)
+                .to_string()
+        } else {
+            crate::constants::DEFAULT_BRANCH_MAIN.to_string()
+        };
+
+        if let Ok(cwd) = std::env::current_dir() {
+            // 1. First check current directory for config
+            let current_config = cwd.join(CONFIG_FILE_NAME);
+            if current_config.exists() {
+                return Ok(current_config);
+            }
+
+            // 2. Check default branch directory in current directory
+            let default_in_current = cwd.join(&default_branch).join(CONFIG_FILE_NAME);
+            if default_in_current.exists() {
+                return Ok(default_in_current);
+            }
+
+            // 3. Also check main/master if different from default
+            if let Some(dir) = find_default_branch_directory(&cwd, &default_branch) {
+                let config_path = dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // 4. Try to detect worktree pattern
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["worktree", "list", "--porcelain"])
+                .current_dir(&cwd)
+                .output()
+            {
+                let worktree_paths = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter_map(|line| {
+                        if line.starts_with("worktree ") {
+                            Some(line.trim_start_matches("worktree ").to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if !worktree_paths.is_empty() {
+                    let parent_dirs: Vec<_> = worktree_paths
+                        .iter()
+                        .filter_map(|p| std::path::Path::new(p).parent())
+                        .collect();
+
+                    if let Some(first_parent) = parent_dirs.first() {
+                        if parent_dirs.iter().all(|p| p == first_parent) {
+                            let default_dir = first_parent.join(&default_branch);
+                            let config_path = default_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+
+                            // Fallback to main/master
+                            if let Some(dir) =
+                                find_default_branch_directory(first_parent, &default_branch)
+                            {
+                                let config_path = dir.join(CONFIG_FILE_NAME);
+                                if config_path.exists() {
+                                    return Ok(config_path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Fallback: Check common subdirectories
+            for subdir in &[
+                crate::constants::BRANCH_SUBDIR,
+                crate::constants::WORKTREES_SUBDIR,
+            ] {
+                let branch_dir = cwd.join(subdir).join(&default_branch);
+                let config_path = branch_dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // 6. Check sibling directories
+            if let Some(parent) = cwd.parent() {
+                let default_dir = parent.join(&default_branch);
+                let config_path = default_dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // Default: use current directory for creation
+            Ok(cwd.join(CONFIG_FILE_NAME))
+        } else {
+            // Can't get current directory
+            Err(anyhow::anyhow!("Cannot determine current directory"))
+        }
+    } else {
+        // For non-bare repositories - same logic as Config::load_from_main_repository_only()
+        if let Ok(cwd) = std::env::current_dir() {
+            // 1. First check current directory
+            let current_config = cwd.join(CONFIG_FILE_NAME);
+            if current_config.exists() {
+                return Ok(current_config);
+            }
+
+            // 2. Check if this is the main worktree
+            if let Some(workdir) = repo.workdir() {
+                let workdir_path = workdir.to_path_buf();
+
+                // Check if current directory is the main worktree
+                if cwd == workdir_path {
+                    return Ok(workdir_path.join(CONFIG_FILE_NAME));
+                }
+
+                // If not, check if the main worktree exists
+                let git_path = workdir_path.join(".git");
+                if git_path.is_dir() && workdir_path.exists() {
+                    let config_path = workdir_path.join(CONFIG_FILE_NAME);
+                    if config_path.exists() {
+                        return Ok(config_path);
+                    }
+                }
+            }
+
+            // 3. Look for main/master in parent directories
+            if let Some(parent) = cwd.parent() {
+                if parent
+                    .file_name()
+                    .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
+                {
+                    // We're in worktrees subdirectory
+                    if let Some(repo_root) = parent.parent() {
+                        if repo_root.join(".git").is_dir() {
+                            let config_path = repo_root.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+
+                        // Check main/master subdirectories
+                        let main_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MAIN);
+                        if main_dir.exists() && main_dir.is_dir() {
+                            let config_path = main_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+
+                        let master_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MASTER);
+                        if master_dir.exists() && master_dir.is_dir() {
+                            let config_path = master_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+                    }
+                } else {
+                    // Check parent for main/master
+                    let main_dir = parent.join(crate::constants::DEFAULT_BRANCH_MAIN);
+                    if main_dir.exists() && main_dir.is_dir() {
+                        let config_path = main_dir.join(CONFIG_FILE_NAME);
+                        if config_path.exists() {
+                            return Ok(config_path);
+                        }
+                    }
+
+                    let master_dir = parent.join(crate::constants::DEFAULT_BRANCH_MASTER);
+                    if master_dir.exists() && master_dir.is_dir() {
+                        let config_path = master_dir.join(CONFIG_FILE_NAME);
+                        if config_path.exists() {
+                            return Ok(config_path);
+                        }
+                    }
+                }
+            }
+
+            // Default: use current directory for creation
+            Ok(cwd.join(CONFIG_FILE_NAME))
+        } else {
+            // Final fallback: use repository working directory
+            repo.workdir()
+                .map(|p| p.join(CONFIG_FILE_NAME))
+                .ok_or_else(|| anyhow::anyhow!("No working directory found"))
+        }
+    }
+}
+
 /// Edits the hooks configuration file
 ///
 /// Opens the `.git-workers.toml` configuration file in the user's
@@ -1735,14 +1925,23 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 ///
 /// # Configuration File Location
 ///
-/// The function searches for the configuration file in the following order:
-/// 1. Current directory (useful for bare repo worktrees)
-/// 2. Parent directory's main/master worktree (for organized worktree structures)
-/// 3. Repository root (for standard repos)
+/// The function uses the exact same configuration file discovery logic as `Config::load()`,
+/// ensuring consistency across all features. The search order depends on repository type:
 ///
-/// This flexible lookup strategy ensures hooks work correctly in both
-/// regular and bare repositories, while maintaining consistency across
-/// all worktrees in a project.
+/// ## Bare Repositories
+/// 1. Current directory
+/// 2. Default branch subdirectories (e.g., `./main/.git-workers.toml`)
+/// 3. Existing worktree pattern detection via `git worktree list`
+/// 4. Common directory fallbacks (`branch/`, `worktrees/`)
+/// 5. Sibling directories
+///
+/// ## Non-bare Repositories
+/// 1. Current directory (current worktree)
+/// 2. Main repository directory (where `.git` is a directory)
+/// 3. `main/` or `master/` subdirectories in parent paths
+///
+/// This ensures hooks configuration is found in the same location as other
+/// configurations, maintaining consistency across all git-workers features.
 ///
 /// # Editor Selection
 ///
@@ -1782,41 +1981,9 @@ pub fn edit_hooks() -> Result<()> {
     println!("{}", section_header("Edit Hooks Configuration"));
     println!();
 
-    // Find the config file location
+    // Find the config file location using the same logic as Config::load()
     let config_path = if let Ok(repo) = git2::Repository::discover(".") {
-        // Try a simpler approach: look for main/master in parent directory
-        if let Ok(cwd) = std::env::current_dir() {
-            // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
-            if let Some(parent) = cwd.parent() {
-                // Look for main or master directories in the parent
-                let main_path = parent.join("main").join(CONFIG_FILE_NAME);
-                let master_path = parent.join("master").join(CONFIG_FILE_NAME);
-
-                if main_path.exists() {
-                    main_path
-                } else if master_path.exists() {
-                    master_path
-                } else {
-                    // For regular repositories, use workdir
-                    let workdir = repo
-                        .workdir()
-                        .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                    workdir.join(CONFIG_FILE_NAME)
-                }
-            } else {
-                // No parent directory, use workdir
-                let workdir = repo
-                    .workdir()
-                    .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                workdir.join(".git-workers.toml")
-            }
-        } else {
-            // Can't get current directory, use workdir
-            let workdir = repo
-                .workdir()
-                .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-            workdir.join(".git-workers.toml")
-        }
+        find_config_file_path(&repo)?
     } else {
         utils::print_error("Not in a git repository");
         println!();
@@ -1859,6 +2026,18 @@ pre-remove = [
 # Run after switching to a worktree
 post-switch = [
     # "echo 'Switched to {{worktree_name}}'"
+]
+
+[files]
+# Optional: Specify a custom source directory
+# If not specified, automatically finds the main worktree
+# source = "/path/to/custom/source"
+# source = "./templates"  # Relative to repository root
+
+# Files to copy when creating new worktrees
+copy = [
+    # ".env",
+    # ".env.local"
 ]
 "#;
 

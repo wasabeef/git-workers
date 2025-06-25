@@ -19,7 +19,7 @@ path = "src/main.rs"
 git2 = { version = "0.20", features = ["vendored-openssl"] }
 
 # CLI Framework
-dialoguer = "0.11"
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 console = "0.15"
 clap = { version = "4.5", features = ["derive"] }
 
@@ -31,7 +31,7 @@ toml = "0.8"
 anyhow = "1.0"
 
 # Utility
-colored = "2.1"  # Keep at 2.1 to maintain lower MSRV
+colored = "3.0"
 chrono = "0.4"
 fuzzy-matcher = "0.3"
 indicatif = "0.17"

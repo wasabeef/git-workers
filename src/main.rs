@@ -47,6 +47,7 @@ use std::io::{self, Write};
 mod commands;
 mod config;
 mod constants;
+mod file_copy;
 mod git;
 mod hooks;
 mod input_esc_raw;
@@ -130,9 +131,12 @@ fn main() -> Result<()> {
         println!();
         println!(
             "{}",
-            "Git Workers - Interactive Worktree Manager"
-                .bright_cyan()
-                .bold()
+            format!(
+                "Git Workers v{} - Interactive Worktree Manager",
+                env!("CARGO_PKG_VERSION")
+            )
+            .bright_cyan()
+            .bold()
         );
         println!("{}", header_separator());
         println!(

@@ -109,6 +109,7 @@ fn test_config_struct_creation() {
     let config = Config {
         repository: git_workers::config::RepositoryConfig::default(),
         hooks,
+        files: Default::default(),
     };
 
     assert!(!config.hooks.is_empty());

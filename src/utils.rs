@@ -12,10 +12,15 @@
 //! - **Line Overwriting**: Progress messages can be overwritten by results
 //! - **Immediate Feedback**: All output is flushed immediately
 
+use crate::constants::{
+    DEFAULT_BRANCH_MAIN, DEFAULT_BRANCH_MASTER, MSG_PRESS_ANY_KEY, MSG_SWITCH_FILE_WARNING,
+    SWITCH_TO_PREFIX,
+};
 use colored::*;
 use console::Term;
 use dialoguer::theme::ColorfulTheme;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 /// Displays a progress message with a spinning hourglass emoji
 ///
@@ -174,7 +179,6 @@ pub fn get_theme() -> ColorfulTheme {
 /// press_any_key_to_continue().unwrap();
 /// ```
 pub fn press_any_key_to_continue() -> io::Result<()> {
-    use crate::constants::MSG_PRESS_ANY_KEY;
     println!();
     println!("{}", MSG_PRESS_ANY_KEY);
     Term::stdout().read_key()?;
@@ -206,8 +210,6 @@ pub fn press_any_key_to_continue() -> io::Result<()> {
 /// write_switch_path(worktree_path);
 /// ```
 pub fn write_switch_path(path: &std::path::Path) {
-    use crate::constants::{MSG_SWITCH_FILE_WARNING, SWITCH_TO_PREFIX};
-
     if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
         if let Err(e) = std::fs::write(&switch_file, path.display().to_string()) {
             eprintln!("{}", MSG_SWITCH_FILE_WARNING.replace("{}", &e.to_string()));
@@ -215,4 +217,75 @@ pub fn write_switch_path(path: &std::path::Path) {
     } else {
         println!("{}{}", SWITCH_TO_PREFIX, path.display());
     }
+}
+
+/// Checks alternative default branch names for configuration files
+///
+/// Given a current default branch and a directory path, this function checks
+/// for configuration files in the common default branch directories (main/master).
+///
+/// # Arguments
+///
+/// * `dir` - The directory to search in
+/// * `default_branch` - The current default branch name
+/// * `config_file` - The configuration filename to look for
+///
+/// # Returns
+///
+/// The path to the found configuration file, or None if not found
+pub fn find_config_in_default_branches(
+    dir: &Path,
+    default_branch: &str,
+    config_file: &str,
+) -> Option<PathBuf> {
+    // Check main branch if it's not the current default
+    if default_branch != DEFAULT_BRANCH_MAIN {
+        let main_config = dir.join(DEFAULT_BRANCH_MAIN).join(config_file);
+        if main_config.exists() {
+            return Some(main_config);
+        }
+    }
+
+    // Check master branch if it's not the current default
+    if default_branch != DEFAULT_BRANCH_MASTER {
+        let master_config = dir.join(DEFAULT_BRANCH_MASTER).join(config_file);
+        if master_config.exists() {
+            return Some(master_config);
+        }
+    }
+
+    None
+}
+
+/// Finds alternative default branch directories
+///
+/// Given a current default branch and a parent directory, this function checks
+/// for existing directories with common default branch names (main/master).
+///
+/// # Arguments
+///
+/// * `dir` - The directory to search in
+/// * `default_branch` - The current default branch name
+///
+/// # Returns
+///
+/// The path to the found directory, or None if not found
+pub fn find_default_branch_directory(dir: &Path, default_branch: &str) -> Option<PathBuf> {
+    // Check main branch if it's not the current default
+    if default_branch != DEFAULT_BRANCH_MAIN {
+        let main_dir = dir.join(DEFAULT_BRANCH_MAIN);
+        if main_dir.exists() && main_dir.is_dir() {
+            return Some(main_dir);
+        }
+    }
+
+    // Check master branch if it's not the current default
+    if default_branch != DEFAULT_BRANCH_MASTER {
+        let master_dir = dir.join(DEFAULT_BRANCH_MASTER);
+        if master_dir.exists() && master_dir.is_dir() {
+            return Some(master_dir);
+        }
+    }
+
+    None
 }
