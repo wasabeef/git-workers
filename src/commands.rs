@@ -1709,6 +1709,215 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     Ok(())
 }
 
+/// Finds the configuration file path using the same logic as Config::load()
+///
+/// This function follows the exact same discovery order as Config::load_from_main_repository_only()
+/// to ensure consistency across the application.
+///
+/// # Arguments
+///
+/// * `repo` - The Git repository reference
+///
+/// # Returns
+///
+/// The path where the configuration file should be located or created.
+fn find_config_file_path(repo: &git2::Repository) -> Result<std::path::PathBuf> {
+    use crate::utils::find_default_branch_directory;
+
+    if repo.is_bare() {
+        // For bare repositories - same logic as Config::load_from_main_repository_only()
+        let default_branch = if let Ok(head) = repo.head() {
+            head.shorthand()
+                .unwrap_or(crate::constants::DEFAULT_BRANCH_MAIN)
+                .to_string()
+        } else {
+            crate::constants::DEFAULT_BRANCH_MAIN.to_string()
+        };
+
+        if let Ok(cwd) = std::env::current_dir() {
+            // 1. First check current directory for config
+            let current_config = cwd.join(CONFIG_FILE_NAME);
+            if current_config.exists() {
+                return Ok(current_config);
+            }
+
+            // 2. Check default branch directory in current directory
+            let default_in_current = cwd.join(&default_branch).join(CONFIG_FILE_NAME);
+            if default_in_current.exists() {
+                return Ok(default_in_current);
+            }
+
+            // 3. Also check main/master if different from default
+            if let Some(dir) = find_default_branch_directory(&cwd, &default_branch) {
+                let config_path = dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // 4. Try to detect worktree pattern
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["worktree", "list", "--porcelain"])
+                .current_dir(&cwd)
+                .output()
+            {
+                let worktree_paths = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter_map(|line| {
+                        if line.starts_with("worktree ") {
+                            Some(line.trim_start_matches("worktree ").to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if !worktree_paths.is_empty() {
+                    let parent_dirs: Vec<_> = worktree_paths
+                        .iter()
+                        .filter_map(|p| std::path::Path::new(p).parent())
+                        .collect();
+
+                    if let Some(first_parent) = parent_dirs.first() {
+                        if parent_dirs.iter().all(|p| p == first_parent) {
+                            let default_dir = first_parent.join(&default_branch);
+                            let config_path = default_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+
+                            // Fallback to main/master
+                            if let Some(dir) =
+                                find_default_branch_directory(first_parent, &default_branch)
+                            {
+                                let config_path = dir.join(CONFIG_FILE_NAME);
+                                if config_path.exists() {
+                                    return Ok(config_path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Fallback: Check common subdirectories
+            for subdir in &[
+                crate::constants::BRANCH_SUBDIR,
+                crate::constants::WORKTREES_SUBDIR,
+            ] {
+                let branch_dir = cwd.join(subdir).join(&default_branch);
+                let config_path = branch_dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // 6. Check sibling directories
+            if let Some(parent) = cwd.parent() {
+                let default_dir = parent.join(&default_branch);
+                let config_path = default_dir.join(CONFIG_FILE_NAME);
+                if config_path.exists() {
+                    return Ok(config_path);
+                }
+            }
+
+            // Default: use current directory for creation
+            Ok(cwd.join(CONFIG_FILE_NAME))
+        } else {
+            // Can't get current directory
+            Err(anyhow::anyhow!("Cannot determine current directory"))
+        }
+    } else {
+        // For non-bare repositories - same logic as Config::load_from_main_repository_only()
+        if let Ok(cwd) = std::env::current_dir() {
+            // 1. First check current directory
+            let current_config = cwd.join(CONFIG_FILE_NAME);
+            if current_config.exists() {
+                return Ok(current_config);
+            }
+
+            // 2. Check if this is the main worktree
+            if let Some(workdir) = repo.workdir() {
+                let workdir_path = workdir.to_path_buf();
+
+                // Check if current directory is the main worktree
+                if cwd == workdir_path {
+                    return Ok(workdir_path.join(CONFIG_FILE_NAME));
+                }
+
+                // If not, check if the main worktree exists
+                let git_path = workdir_path.join(".git");
+                if git_path.is_dir() && workdir_path.exists() {
+                    let config_path = workdir_path.join(CONFIG_FILE_NAME);
+                    if config_path.exists() {
+                        return Ok(config_path);
+                    }
+                }
+            }
+
+            // 3. Look for main/master in parent directories
+            if let Some(parent) = cwd.parent() {
+                if parent
+                    .file_name()
+                    .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
+                {
+                    // We're in worktrees subdirectory
+                    if let Some(repo_root) = parent.parent() {
+                        if repo_root.join(".git").is_dir() {
+                            let config_path = repo_root.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+
+                        // Check main/master subdirectories
+                        let main_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MAIN);
+                        if main_dir.exists() && main_dir.is_dir() {
+                            let config_path = main_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+
+                        let master_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MASTER);
+                        if master_dir.exists() && master_dir.is_dir() {
+                            let config_path = master_dir.join(CONFIG_FILE_NAME);
+                            if config_path.exists() {
+                                return Ok(config_path);
+                            }
+                        }
+                    }
+                } else {
+                    // Check parent for main/master
+                    let main_dir = parent.join(crate::constants::DEFAULT_BRANCH_MAIN);
+                    if main_dir.exists() && main_dir.is_dir() {
+                        let config_path = main_dir.join(CONFIG_FILE_NAME);
+                        if config_path.exists() {
+                            return Ok(config_path);
+                        }
+                    }
+
+                    let master_dir = parent.join(crate::constants::DEFAULT_BRANCH_MASTER);
+                    if master_dir.exists() && master_dir.is_dir() {
+                        let config_path = master_dir.join(CONFIG_FILE_NAME);
+                        if config_path.exists() {
+                            return Ok(config_path);
+                        }
+                    }
+                }
+            }
+
+            // Default: use current directory for creation
+            Ok(cwd.join(CONFIG_FILE_NAME))
+        } else {
+            // Final fallback: use repository working directory
+            repo.workdir()
+                .map(|p| p.join(CONFIG_FILE_NAME))
+                .ok_or_else(|| anyhow::anyhow!("No working directory found"))
+        }
+    }
+}
+
 /// Edits the hooks configuration file
 ///
 /// Opens the `.git-workers.toml` configuration file in the user's
@@ -1716,14 +1925,23 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 ///
 /// # Configuration File Location
 ///
-/// The function searches for the configuration file in the following order:
-/// 1. Current directory (useful for bare repo worktrees)
-/// 2. Parent directory's main/master worktree (for organized worktree structures)
-/// 3. Repository root (for standard repos)
+/// The function uses the exact same configuration file discovery logic as `Config::load()`,
+/// ensuring consistency across all features. The search order depends on repository type:
 ///
-/// This flexible lookup strategy ensures hooks work correctly in both
-/// regular and bare repositories, while maintaining consistency across
-/// all worktrees in a project.
+/// ## Bare Repositories
+/// 1. Current directory
+/// 2. Default branch subdirectories (e.g., `./main/.git-workers.toml`)
+/// 3. Existing worktree pattern detection via `git worktree list`
+/// 4. Common directory fallbacks (`branch/`, `worktrees/`)
+/// 5. Sibling directories
+///
+/// ## Non-bare Repositories
+/// 1. Current directory (current worktree)
+/// 2. Main repository directory (where `.git` is a directory)
+/// 3. `main/` or `master/` subdirectories in parent paths
+///
+/// This ensures hooks configuration is found in the same location as other
+/// configurations, maintaining consistency across all git-workers features.
 ///
 /// # Editor Selection
 ///
@@ -1763,45 +1981,9 @@ pub fn edit_hooks() -> Result<()> {
     println!("{}", section_header("Edit Hooks Configuration"));
     println!();
 
-    // Find the config file location
+    // Find the config file location using the same logic as Config::load()
     let config_path = if let Ok(repo) = git2::Repository::discover(".") {
-        // Try a simpler approach: look for main/master in parent directory
-        if let Ok(cwd) = std::env::current_dir() {
-            // Check if we're in a worktree structure like /path/to/repo/branch/worktree-name
-            if let Some(parent) = cwd.parent() {
-                // Look for main or master directories in the parent
-                let main_path = parent
-                    .join(crate::constants::DEFAULT_BRANCH_MAIN)
-                    .join(CONFIG_FILE_NAME);
-                let master_path = parent
-                    .join(crate::constants::DEFAULT_BRANCH_MASTER)
-                    .join(CONFIG_FILE_NAME);
-
-                if main_path.exists() {
-                    main_path
-                } else if master_path.exists() {
-                    master_path
-                } else {
-                    // For regular repositories, use workdir
-                    let workdir = repo
-                        .workdir()
-                        .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                    workdir.join(CONFIG_FILE_NAME)
-                }
-            } else {
-                // No parent directory, use workdir
-                let workdir = repo
-                    .workdir()
-                    .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-                workdir.join(CONFIG_FILE_NAME)
-            }
-        } else {
-            // Can't get current directory, use workdir
-            let workdir = repo
-                .workdir()
-                .ok_or_else(|| anyhow::anyhow!("No working directory"))?;
-            workdir.join(CONFIG_FILE_NAME)
-        }
+        find_config_file_path(&repo)?
     } else {
         utils::print_error("Not in a git repository");
         println!();

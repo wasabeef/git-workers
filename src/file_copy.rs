@@ -5,11 +5,13 @@
 //! are gitignored but necessary for the project to function.
 
 use anyhow::{anyhow, Context, Result};
+use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::FilesConfig;
-use crate::git::GitWorktreeManager;
+use crate::constants::WORKTREES_SUBDIR;
+use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
 ///
@@ -57,12 +59,16 @@ pub fn copy_configured_files(
     }
 
     let mut copied_files = Vec::new();
-    let mut warnings = Vec::new();
+
+    println!("\n{}", "📄 Copying configured files...".bright_cyan());
 
     for file_pattern in &config.copy {
-        // Validate path to prevent directory traversal
         if !is_safe_path(file_pattern) {
-            warnings.push(format!("Skipping unsafe path: {}", file_pattern));
+            println!(
+                "  {} Skipping unsafe path: {}",
+                "⚠️".yellow(),
+                file_pattern.yellow()
+            );
             continue;
         }
 
@@ -70,19 +76,42 @@ pub fn copy_configured_files(
         let dest_path = destination_path.join(file_pattern);
 
         match copy_file_or_directory(&source_path, &dest_path) {
-            Ok(()) => {
-                copied_files.push(file_pattern.clone());
+            Ok(count) => {
+                if count > 0 {
+                    println!(
+                        "  {} Copied: {} ({} file{})",
+                        "✓".green(),
+                        file_pattern.green(),
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    );
+                    copied_files.push(file_pattern.clone());
+                }
             }
             Err(e) => {
-                // Log warning but continue with other files
-                warnings.push(format!("Failed to copy {}: {}", file_pattern, e));
+                // Check if it's a "not found" error
+                if e.to_string().contains("No such file or directory")
+                    || e.to_string().contains("not found")
+                {
+                    println!(
+                        "  {} Not found: {} (skipping)",
+                        "⚠️".yellow(),
+                        file_pattern.yellow()
+                    );
+                } else {
+                    println!(
+                        "  {} Failed to copy {}: {}",
+                        "✗".red(),
+                        file_pattern.red(),
+                        e
+                    );
+                }
             }
         }
     }
 
-    // Print warnings if any
-    for warning in warnings {
-        eprintln!("Warning: {}", warning);
+    if copied_files.is_empty() {
+        println!("  {} No files were copied", "ℹ️".blue());
     }
 
     Ok(copied_files)
@@ -90,244 +119,168 @@ pub fn copy_configured_files(
 
 /// Determines the source directory for file copying
 ///
-/// If a source is specified in the config, it uses that.
-/// Otherwise, it attempts to find the main worktree directory.
+/// Priority:
+/// 1. Explicitly configured source directory
+/// 2. Main worktree directory (for bare repositories)
+/// 3. Current working directory (for non-bare repositories)
 fn determine_source_directory(
     config: &FilesConfig,
     manager: &GitWorktreeManager,
 ) -> Result<PathBuf> {
     if let Some(source) = &config.source {
-        // Use configured source
         let path = PathBuf::from(source);
         if path.is_absolute() {
-            Ok(path)
-        } else {
-            // Make relative to repository
-            manager
-                .repo()
-                .workdir()
-                .map(|w| w.join(source))
-                .ok_or_else(|| anyhow!("Cannot determine repository working directory"))
+            return Ok(path);
         }
+        // Make relative paths relative to repo root
+        return Ok(manager.repo().path().join(source));
+    }
+
+    // For bare repositories, find the main worktree
+    if manager.repo().is_bare() {
+        find_source_in_bare_repo(manager)
     } else {
-        // Find main worktree
-        find_main_worktree(manager)
+        // For non-bare repositories, use the main repository directory
+        find_source_in_regular_repo(manager)
     }
 }
 
-/// Finds the main worktree directory for file copying
-///
-/// This function follows the same discovery logic as configuration file loading,
-/// ensuring consistency between config and file copy operations.
-fn find_main_worktree(manager: &GitWorktreeManager) -> Result<PathBuf> {
-    let repo = manager.repo();
-
-    if repo.is_bare() {
-        // For bare repositories - same logic as config file search
-        find_source_in_bare_repo(repo)
-    } else {
-        // For non-bare repositories - same logic as config file search
-        find_source_in_regular_repo(repo)
-    }
+/// Finds the main worktree in a bare repository setup
+fn find_main_worktree(worktrees: &[WorktreeInfo]) -> Option<&WorktreeInfo> {
+    // First try to find explicitly named main/master worktrees
+    worktrees
+        .iter()
+        .find(|w| w.name == "main" || w.name == "master")
+        .or_else(|| {
+            // Otherwise, find the worktree that's a sibling of the git directory
+            worktrees.iter().find(|w| {
+                // Check if this worktree is at the same level as .git
+                w.path
+                    .parent()
+                    .and_then(|parent| parent.file_name())
+                    .map(|name| name != WORKTREES_SUBDIR)
+                    .unwrap_or(false)
+            })
+        })
 }
 
-/// Finds source directory in bare repository
-/// Following the same priority as config file search
-fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
-    // Get the default branch name from HEAD
-    let default_branch = repo
-        .head()
-        .ok()
-        .and_then(|h| h.shorthand().map(String::from))
-        .unwrap_or_else(|| crate::constants::DEFAULT_BRANCH_MAIN.to_string());
+/// Finds source directory in a bare repository
+fn find_source_in_bare_repo(manager: &GitWorktreeManager) -> Result<PathBuf> {
+    let worktrees = manager.list_worktrees()?;
 
-    if let Ok(cwd) = std::env::current_dir() {
-        // 1. First check current directory
-        if cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
-            return Ok(cwd);
+    if let Some(main_worktree) = find_main_worktree(&worktrees) {
+        // Look for config file in main worktree
+        let config_path = main_worktree.path.join(crate::constants::CONFIG_FILE_NAME);
+        if config_path.exists() {
+            return Ok(main_worktree.path.clone());
         }
+    }
 
-        // 2. Check default branch directory in current directory
-        let default_in_current = cwd.join(&default_branch);
-        if default_in_current.exists() && default_in_current.is_dir() {
-            return Ok(default_in_current);
-        }
+    // If no main worktree or config found, check default locations
+    let git_dir = manager.repo().path();
+    let parent = git_dir
+        .parent()
+        .ok_or_else(|| anyhow!("Git directory has no parent"))?;
 
-        // Also check main/master if different from default
-        if let Some(dir) = crate::utils::find_default_branch_directory(&cwd, &default_branch) {
-            return Ok(dir);
-        }
-
-        // 3. Try to detect worktree pattern
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["worktree", "list", "--porcelain"])
-            .current_dir(&cwd)
-            .output()
+    // Check common worktree locations
+    for name in &["main", "master"] {
+        let worktree_path = parent.join(name);
+        if worktree_path.exists()
+            && worktree_path
+                .join(crate::constants::CONFIG_FILE_NAME)
+                .exists()
         {
-            let worktree_paths = String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|line| {
-                    if line.starts_with("worktree ") {
-                        Some(line.trim_start_matches("worktree ").to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            if !worktree_paths.is_empty() {
-                let parent_dirs: Vec<_> = worktree_paths
-                    .iter()
-                    .filter_map(|p| Path::new(p).parent())
-                    .collect();
-
-                if let Some(first_parent) = parent_dirs.first() {
-                    if parent_dirs.iter().all(|p| p == first_parent) {
-                        let default_dir = first_parent.join(&default_branch);
-                        if default_dir.exists() && default_dir.is_dir() {
-                            return Ok(default_dir);
-                        }
-
-                        // Fallback to main/master
-                        if let Some(dir) = crate::utils::find_default_branch_directory(
-                            first_parent,
-                            &default_branch,
-                        ) {
-                            return Ok(dir);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Fallback: Check common subdirectories
-        for subdir in &[
-            crate::constants::BRANCH_SUBDIR,
-            crate::constants::WORKTREES_SUBDIR,
-        ] {
-            let branch_dir = cwd.join(subdir).join(&default_branch);
-            if branch_dir.exists() && branch_dir.is_dir() {
-                return Ok(branch_dir);
-            }
-        }
-
-        // 5. Check sibling directories
-        if let Some(parent) = cwd.parent() {
-            let default_dir = parent.join(&default_branch);
-            if default_dir.exists() && default_dir.is_dir() {
-                return Ok(default_dir);
-            }
+            return Ok(worktree_path);
         }
     }
 
     Err(anyhow!(
-        "Could not find source directory for file copying in bare repository"
+        "No main worktree found with {} file",
+        crate::constants::CONFIG_FILE_NAME
     ))
 }
 
-/// Finds source directory in non-bare repository
-/// Following the same priority as config file search
-fn find_source_in_regular_repo(repo: &git2::Repository) -> Result<PathBuf> {
-    if let Ok(cwd) = std::env::current_dir() {
-        // 1. First check current directory
-        if cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
-            return Ok(cwd);
-        }
+/// Finds source directory in a regular (non-bare) repository
+fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> {
+    // For non-bare repos, start with the working directory
+    let cwd = std::env::current_dir()?;
 
-        // 2. Check if this is the main worktree
-        if let Some(workdir) = repo.workdir() {
-            let workdir_path = workdir.to_path_buf();
+    // If we're in the main repository directory, use it
+    if cwd.join(".git").exists() && cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
+        return Ok(cwd);
+    }
 
-            // Check if current directory is the main worktree
-            if cwd == workdir_path {
-                return Ok(workdir_path);
-            }
+    // Otherwise, find the repository root
+    let repo_workdir = manager
+        .repo()
+        .workdir()
+        .ok_or_else(|| anyhow!("Repository has no working directory"))?;
 
-            // If not, check if the main worktree exists
-            let git_path = workdir_path.join(".git");
-            if git_path.is_dir() && workdir_path.exists() {
-                return Ok(workdir_path);
-            }
-        }
+    Ok(repo_workdir.to_path_buf())
+}
 
-        // 3. Look for main/master in parent directories
-        if let Some(parent) = cwd.parent() {
-            if parent
-                .file_name()
-                .is_some_and(|n| n == crate::constants::WORKTREES_SUBDIR)
-            {
-                // We're in worktrees subdirectory
-                if let Some(repo_root) = parent.parent() {
-                    if repo_root.join(".git").is_dir() {
-                        return Ok(repo_root.to_path_buf());
-                    }
+/// Maximum directory recursion depth to prevent infinite loops
+const MAX_DIRECTORY_DEPTH: usize = 50;
 
-                    // Check main/master subdirectories
-                    let main_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MAIN);
-                    if main_dir.exists() && main_dir.is_dir() {
-                        return Ok(main_dir);
-                    }
+/// Validates that a path is safe to use (no directory traversal)
+///
+/// # Security
+///
+/// This function ensures paths don't contain:
+/// - Parent directory references (`..`)
+/// - Absolute paths
+/// - Other potentially dangerous patterns
+fn is_safe_path(path: &str) -> bool {
+    // Reject empty paths
+    if path.is_empty() {
+        return false;
+    }
 
-                    let master_dir = repo_root.join(crate::constants::DEFAULT_BRANCH_MASTER);
-                    if master_dir.exists() && master_dir.is_dir() {
-                        return Ok(master_dir);
-                    }
-                }
-            } else {
-                // Check parent for main/master
-                let main_dir = parent.join(crate::constants::DEFAULT_BRANCH_MAIN);
-                if main_dir.exists() && main_dir.is_dir() {
-                    return Ok(main_dir);
-                }
+    // Reject absolute paths
+    if path.starts_with('/') || path.starts_with('\\') {
+        return false;
+    }
 
-                let master_dir = parent.join(crate::constants::DEFAULT_BRANCH_MASTER);
-                if master_dir.exists() && master_dir.is_dir() {
-                    return Ok(master_dir);
-                }
-            }
+    // Check for Windows absolute paths (C:\, D:\, etc.)
+    if path.len() >= 3 && path.chars().nth(1) == Some(':') {
+        return false;
+    }
+
+    // Reject paths containing parent directory references
+    let components: Vec<&str> = path.split(&['/', '\\'][..]).collect();
+    for component in components {
+        if component == ".." || component == "." {
+            return false;
         }
     }
 
-    // Final fallback: use repository working directory
-    repo.workdir()
-        .map(|p| p.to_path_buf())
-        .ok_or_else(|| anyhow!("No working directory found"))
-}
-
-/// Validates that a path is safe and doesn't use directory traversal
-///
-/// Rejects paths containing:
-/// - `..` (parent directory)
-/// - Absolute paths
-/// - Paths starting with `/` or `~`
-fn is_safe_path(path: &str) -> bool {
-    !path.contains("..")
-        && !path.starts_with('/')
-        && !path.starts_with('~')
-        && !Path::new(path).is_absolute()
+    true
 }
 
 /// Copies a file or directory from source to destination
 ///
-/// Creates parent directories as needed.
-/// For directories, copies recursively.
-fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<()> {
+/// # Returns
+///
+/// Returns the number of files copied
+fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     if !source.exists() {
-        return Err(anyhow!("Source does not exist: {}", source.display()));
+        return Err(anyhow!("Source path not found: {}", source.display()));
     }
 
-    // Create parent directory if needed
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create parent directory: {}", parent.display()))?;
+    // Symlink detection with warning
+    if source.symlink_metadata()?.file_type().is_symlink() {
+        println!("  {} Skipping symlink: {}", "⚠️".yellow(), source.display());
+        return Ok(0);
     }
 
     if source.is_file() {
-        // Check if source is a symlink
-        if source.symlink_metadata()?.is_symlink() {
-            eprintln!("Warning: Skipping symbolic link: {}", source.display());
-            return Ok(());
+        // Create parent directory if needed
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create parent directory: {}", parent.display())
+            })?;
         }
+
         fs::copy(source, dest).with_context(|| {
             format!(
                 "Failed to copy file from {} to {}",
@@ -335,69 +288,90 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<()> {
                 dest.display()
             )
         })?;
+
+        Ok(1)
     } else if source.is_dir() {
-        copy_directory_recursive(source, dest)?;
-    }
-
-    Ok(())
-}
-
-/// Maximum directory depth to prevent infinite recursion
-const MAX_DIRECTORY_DEPTH: usize = 50;
-
-/// Recursively copies a directory
-fn copy_directory_recursive(source: &Path, dest: &Path) -> Result<()> {
-    copy_directory_recursive_impl(source, dest, 0)
-}
-
-/// Internal implementation with depth tracking
-fn copy_directory_recursive_impl(source: &Path, dest: &Path, depth: usize) -> Result<()> {
-    if depth > MAX_DIRECTORY_DEPTH {
-        return Err(anyhow!(
-            "Directory nesting too deep (> {} levels): {}",
-            MAX_DIRECTORY_DEPTH,
+        copy_directory_recursive(source, dest, 0)
+    } else {
+        Err(anyhow!(
+            "Source is neither a file nor a directory: {}",
             source.display()
+        ))
+    }
+}
+
+/// Recursively copies a directory and its contents
+///
+/// # Security
+///
+/// Includes depth limiting to prevent infinite recursion from circular symlinks
+fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<usize> {
+    if depth >= MAX_DIRECTORY_DEPTH {
+        return Err(anyhow!(
+            "Maximum directory depth ({}) exceeded. Possible circular reference.",
+            MAX_DIRECTORY_DEPTH
         ));
     }
+
     fs::create_dir_all(dest)
         .with_context(|| format!("Failed to create directory: {}", dest.display()))?;
 
+    let mut total_files = 0;
+
     for entry in fs::read_dir(source)? {
         let entry = entry?;
-        let file_type = entry.file_type()?;
-        let source_path = entry.path();
         let file_name = entry.file_name();
+        let source_path = entry.path();
         let dest_path = dest.join(&file_name);
 
-        if file_type.is_file() {
-            fs::copy(&source_path, &dest_path)
-                .with_context(|| format!("Failed to copy file: {}", source_path.display()))?;
-        } else if file_type.is_dir() {
-            copy_directory_recursive_impl(&source_path, &dest_path, depth + 1)?;
-        } else if file_type.is_symlink() {
-            // Warn about skipping symlinks
-            eprintln!("Warning: Skipping symbolic link: {}", source_path.display());
+        // Check for circular reference
+        if source_path
+            .canonicalize()
+            .ok()
+            .and_then(|canonical_source| {
+                dest.canonicalize()
+                    .ok()
+                    .map(|canonical_dest| canonical_source.starts_with(&canonical_dest))
+            })
+            .unwrap_or(false)
+        {
+            println!(
+                "  {} Skipping circular reference: {}",
+                "⚠️".yellow(),
+                source_path.display()
+            );
+            continue;
+        }
+
+        match copy_directory_recursive_impl(&source_path, &dest_path, depth + 1) {
+            Ok(count) => total_files += count,
+            Err(e) => {
+                println!(
+                    "  {} Failed to copy {}: {}",
+                    "⚠️".yellow(),
+                    source_path.display(),
+                    e
+                );
+            }
         }
     }
 
-    Ok(())
+    Ok(total_files)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Implementation helper for recursive directory copying
+fn copy_directory_recursive_impl(source: &Path, dest: &Path, depth: usize) -> Result<usize> {
+    // Symlink detection
+    if source.symlink_metadata()?.file_type().is_symlink() {
+        return Ok(0); // Skip symlinks silently in recursive copy
+    }
 
-    #[test]
-    fn test_is_safe_path() {
-        // Safe paths
-        assert!(is_safe_path(".env"));
-        assert!(is_safe_path("config/local.json"));
-        assert!(is_safe_path("deeply/nested/file.txt"));
-
-        // Unsafe paths
-        assert!(!is_safe_path("../../../etc/passwd"));
-        assert!(!is_safe_path("/etc/passwd"));
-        assert!(!is_safe_path("~/sensitive"));
-        assert!(!is_safe_path("some/../../../path"));
+    if source.is_file() {
+        fs::copy(source, dest)?;
+        Ok(1)
+    } else if source.is_dir() {
+        copy_directory_recursive(source, dest, depth)
+    } else {
+        Ok(0) // Skip special files
     }
 }
