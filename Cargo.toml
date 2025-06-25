@@ -31,7 +31,7 @@ toml = "0.8"
 anyhow = "1.0"
 
 # Utility
-colored = "2.1"  # Keep at 2.1 to maintain lower MSRV
+colored = "3.0"
 chrono = "0.4"
 fuzzy-matcher = "0.3"
 indicatif = "0.17"
