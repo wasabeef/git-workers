@@ -10,8 +10,9 @@ https://github.com/user-attachments/assets/fb5f0213-4a9f-43e2-9557-416070d7e122
 ## Features
 
 - 📋 List worktrees with detailed status information (branch, changes, ahead/behind)
-- 🔍 Fuzzy search through worktrees
+- 🔍 Fuzzy search through worktrees and branches
 - ➕ Create new worktrees from branches or HEAD
+- 📄 Automatically copy gitignored files (like .env) to new worktrees
 - ➖ Delete single or multiple worktrees
 - 🔄 Switch worktrees with automatic directory change
 - ✏️ Rename worktrees and optionally their branches
@@ -58,10 +59,11 @@ Git Workers provides an interactive menu-driven interface. Simply run `gw` and n
 - **Search worktrees** (`?`): Fuzzy search through worktree names and branches
 - **Create worktree** (`+`): Create a new worktree with two options:
   - **Create from current HEAD**: Creates a new worktree with a new branch from the current HEAD
-  - **Select branch (smart mode)**: Choose from local/remote branches with automatic conflict resolution:
-    - Shows both local and remote branches with usage status
+  - **Select branch (smart mode)**: Choose from local/remote branches with fuzzy search:
+    - Shows local branches (💻) and remote branches (⛅️) with usage status
     - Automatically handles branch conflicts (offers to create new branch if already in use)
-    - Remote branches are prefixed with `↑` for easy identification
+    - Fuzzy search enabled when >10 branches for easy navigation
+    - Automatically copies configured files (.env, etc.) to new worktrees
 - **Delete worktree** (`-`): Delete a single worktree with safety checks
 - **Batch delete** (`=`): Select and delete multiple worktrees at once (optionally deletes orphaned branches)
 - **Cleanup old worktrees** (`~`): Remove worktrees older than specified days
