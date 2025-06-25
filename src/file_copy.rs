@@ -143,7 +143,7 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
 
     if let Ok(cwd) = std::env::current_dir() {
         // 1. First check current directory
-        if cwd.join(".git-workers.toml").exists() {
+        if cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
             return Ok(cwd);
         }
 
@@ -230,7 +230,7 @@ fn find_source_in_bare_repo(repo: &git2::Repository) -> Result<PathBuf> {
 fn find_source_in_regular_repo(repo: &git2::Repository) -> Result<PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
         // 1. First check current directory
-        if cwd.join(".git-workers.toml").exists() {
+        if cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
             return Ok(cwd);
         }
 

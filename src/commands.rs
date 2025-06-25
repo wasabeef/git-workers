@@ -20,9 +20,7 @@
 use anyhow::Result;
 use colored::*;
 use console::Term;
-use dialoguer::{Confirm, MultiSelect, Select};
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
+use dialoguer::{Confirm, FuzzySelect, MultiSelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
@@ -318,63 +316,15 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         return Ok(false);
     }
 
-    // Get search query
     println!();
     println!("{}", section_header("Search Worktrees"));
     println!();
 
-    let search_query = match input_esc("Enter search query (name or branch)") {
-        Some(query) => query.trim().to_string(),
-        None => return Ok(false),
-    };
-
-    if search_query.is_empty() {
-        return Ok(false);
-    }
-
-    // Perform fuzzy search
-    let matcher = SkimMatcherV2::default();
-    let mut results: Vec<(i64, String, &WorktreeInfo)> = worktrees
+    // Create items for fuzzy search
+    let items: Vec<String> = worktrees
         .iter()
-        .filter_map(|wt| {
-            let name_score = matcher.fuzzy_match(&wt.name, &search_query).unwrap_or(0);
-            let branch_score = matcher.fuzzy_match(&wt.branch, &search_query).unwrap_or(0);
-            let max_score = name_score.max(branch_score);
-
-            if max_score > 0 {
-                let display = format!("{} ({})", wt.name, wt.branch);
-                Some((max_score, display, wt))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if results.is_empty() {
-        println!();
-        println!("{}", "• No matching worktrees found.".yellow());
-        println!();
-        press_any_key_to_continue()?;
-        return Ok(false);
-    }
-
-    // Sort by score (highest first)
-    results.sort_by(|a, b| b.0.cmp(&a.0));
-
-    // Display results
-    println!();
-    println!(
-        "{} Found {} matching worktree{}:",
-        "•".bright_green(),
-        results.len(),
-        if results.len() == 1 { "" } else { "s" }
-    );
-    println!();
-
-    let items: Vec<String> = results
-        .iter()
-        .map(|(score, display, wt)| {
-            let mut item = format!("{} [score: {}]", display, score);
+        .map(|wt| {
+            let mut item = format!("{} ({})", wt.name, wt.branch);
             if wt.is_current {
                 item.push_str(" (current)");
             }
@@ -382,8 +332,10 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         })
         .collect();
 
-    let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select a worktree to switch to (ESC to cancel)")
+    // Use FuzzySelect for interactive search
+    println!("Type to search worktrees (fuzzy search enabled):");
+    let selection = match FuzzySelect::with_theme(&get_theme())
+        .with_prompt("Select a worktree to switch to")
         .items(&items)
         .interact_opt()?
     {
@@ -391,7 +343,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         None => return Ok(false),
     };
 
-    let selected_worktree = results[selection].2;
+    let selected_worktree = &worktrees[selection];
 
     if selected_worktree.is_current {
         println!();
@@ -571,47 +523,54 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Get branch to worktree mapping
                 let branch_worktree_map = manager.get_branch_worktree_map()?;
 
-                // Create display items without section headers
+                // Create items for fuzzy search (plain text for search, formatted for display)
                 let mut branch_items: Vec<String> = Vec::new();
                 let mut branch_refs: Vec<(String, bool)> = Vec::new(); // (branch_name, is_remote)
 
-                // Add local branches
+                // Add local branches with laptop icon (laptop emoji takes 2 columns)
                 for branch in &local_branches {
                     if let Some(worktree) = branch_worktree_map.get(branch) {
-                        branch_items.push(format!(
-                            "  {} {}",
-                            branch.white(),
-                            format!("(in use by '{}')", worktree).bright_red()
-                        ));
+                        branch_items.push(format!("💻 {} (in use by '{}')", branch, worktree));
                     } else {
-                        branch_items.push(format!("  {}", branch.white()));
+                        branch_items.push(format!("💻 {}", branch));
                     }
                     branch_refs.push((branch.clone(), false));
                 }
 
-                // Add remote branches with clear distinction
+                // Add remote branches with cloud icon (cloud emoji should align with laptop)
                 for branch in &remote_branches {
                     let full_remote_name = format!("{}{}", GIT_REMOTE_PREFIX, branch);
                     if let Some(worktree) = branch_worktree_map.get(&full_remote_name) {
                         branch_items.push(format!(
-                            "↑ {} {}",
-                            full_remote_name.bright_blue(),
-                            format!("(in use by '{}')", worktree).bright_red()
+                            "⛅️ {} (in use by '{}')",
+                            full_remote_name, worktree
                         ));
                     } else {
-                        branch_items.push(format!("↑ {}", full_remote_name.bright_blue()));
+                        branch_items.push(format!("⛅️ {}", full_remote_name));
                     }
                     branch_refs.push((branch.clone(), true));
                 }
 
                 println!();
-                match Select::with_theme(&get_theme())
-                    .with_prompt("Select a branch")
-                    .items(&branch_items)
-                    .interact_opt()?
-                {
+
+                // Use FuzzySelect for better search experience when there are many branches
+                let selection_result = if branch_items.len() > 10 {
+                    println!("Type to search branches (fuzzy search enabled):");
+                    FuzzySelect::with_theme(&get_theme())
+                        .with_prompt("Select a branch")
+                        .items(&branch_items)
+                        .interact_opt()?
+                } else {
+                    Select::with_theme(&get_theme())
+                        .with_prompt("Select a branch")
+                        .items(&branch_items)
+                        .interact_opt()?
+                };
+
+                match selection_result {
                     Some(selection) => {
-                        let (selected_branch, is_remote) = &branch_refs[selection];
+                        let (selected_branch, is_remote): (&String, &bool) =
+                            (&branch_refs[selection].0, &branch_refs[selection].1);
 
                         if !is_remote {
                             // Local branch - check if already checked out

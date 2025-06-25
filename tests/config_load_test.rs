@@ -147,7 +147,10 @@ post-create = [
     let config = Config::load()?;
 
     if let Some(hooks) = config.hooks.get("post-create") {
-        assert!(hooks.len() >= 5 || hooks.is_empty());
+        assert_eq!(hooks.len(), 5);
+    } else {
+        // If no hooks found, that's also acceptable for this test
+        assert!(config.hooks.is_empty());
     }
 
     Ok(())

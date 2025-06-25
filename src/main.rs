@@ -131,9 +131,12 @@ fn main() -> Result<()> {
         println!();
         println!(
             "{}",
-            "Git Workers - Interactive Worktree Manager"
-                .bright_cyan()
-                .bold()
+            format!(
+                "Git Workers v{} - Interactive Worktree Manager",
+                env!("CARGO_PKG_VERSION")
+            )
+            .bright_cyan()
+            .bold()
         );
         println!("{}", header_separator());
         println!(
