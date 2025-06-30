@@ -68,15 +68,14 @@ pub fn copy_configured_files(
 
     let mut copied_files = Vec::new();
 
-    println!("\n{}", "📄 Copying configured files...".bright_cyan());
+    let msg = "📄 Copying configured files...".bright_cyan();
+    println!("\n{msg}");
 
     for file_pattern in &config.copy {
         if !is_safe_path(file_pattern) {
-            println!(
-                "  {} Skipping unsafe path: {}",
-                "⚠️".yellow(),
-                file_pattern.yellow()
-            );
+            let warning = "⚠️".yellow();
+            let pattern = file_pattern.yellow();
+            println!("  {warning} Skipping unsafe path: {pattern}");
             continue;
         }
 
@@ -86,12 +85,10 @@ pub fn copy_configured_files(
         if source_path.exists() {
             if let Ok(size) = calculate_path_size(&source_path) {
                 if size > MAX_FILE_SIZE && source_path.is_file() {
-                    println!(
-                        "  {} Skipping large file: {} ({:.1} MB)",
-                        "⚠️".yellow(),
-                        file_pattern.yellow(),
-                        size as f64 / 1024.0 / 1024.0
-                    );
+                    let warning = "⚠️".yellow();
+                    let pattern = file_pattern.yellow();
+                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                    println!("  {warning} Skipping large file: {pattern} ({size_mb:.1} MB)");
                     continue;
                 }
             }
@@ -101,13 +98,10 @@ pub fn copy_configured_files(
         match copy_file_or_directory(&source_path, &dest_path) {
             Ok(count) => {
                 if count > 0 {
-                    println!(
-                        "  {} Copied: {} ({} file{})",
-                        "✓".green(),
-                        file_pattern.green(),
-                        count,
-                        if count == 1 { "" } else { "s" }
-                    );
+                    let checkmark = "✓".green();
+                    let pattern = file_pattern.green();
+                    let plural = if count == 1 { "" } else { "s" };
+                    println!("  {checkmark} Copied: {pattern} ({count} file{plural})");
                     copied_files.push(file_pattern.clone());
                 }
             }
@@ -116,25 +110,21 @@ pub fn copy_configured_files(
                 if e.to_string().contains("No such file or directory")
                     || e.to_string().contains("not found")
                 {
-                    println!(
-                        "  {} Not found: {} (skipping)",
-                        "⚠️".yellow(),
-                        file_pattern.yellow()
-                    );
+                    let warning = "⚠️".yellow();
+                    let pattern = file_pattern.yellow();
+                    println!("  {warning} Not found: {pattern} (skipping)");
                 } else {
-                    println!(
-                        "  {} Failed to copy {}: {}",
-                        "✗".red(),
-                        file_pattern.red(),
-                        e
-                    );
+                    let cross = "✗".red();
+                    let pattern = file_pattern.red();
+                    println!("  {cross} Failed to copy {pattern}: {e}");
                 }
             }
         }
     }
 
     if copied_files.is_empty() {
-        println!("  {} No files were copied", "ℹ️".blue());
+        let info = "ℹ️".blue();
+        println!("  {info} No files were copied");
     }
 
     Ok(copied_files)
@@ -345,12 +335,15 @@ fn is_safe_path(path: &str) -> bool {
 /// Returns the number of files copied
 fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     if !source.exists() {
-        return Err(anyhow!("Source path not found: {}", source.display()));
+        let source_path = source.display();
+        return Err(anyhow!("Source path not found: {source_path}"));
     }
 
     // Symlink detection with warning
     if source.symlink_metadata()?.file_type().is_symlink() {
-        println!("  {} Skipping symlink: {}", "⚠️".yellow(), source.display());
+        let warning = "⚠️".yellow();
+        let source_path = source.display();
+        println!("  {warning} Skipping symlink: {source_path}");
         return Ok(0);
     }
 
@@ -358,7 +351,10 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
         // Create parent directory if needed
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create parent directory: {}", parent.display())
+                format!(
+                    "Failed to create parent directory: {parent_display}",
+                    parent_display = parent.display()
+                )
             })?;
         }
 
@@ -394,8 +390,12 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
         ));
     }
 
-    fs::create_dir_all(dest)
-        .with_context(|| format!("Failed to create directory: {}", dest.display()))?;
+    fs::create_dir_all(dest).with_context(|| {
+        format!(
+            "Failed to create directory: {dest_display}",
+            dest_display = dest.display()
+        )
+    })?;
 
     let mut total_files = 0;
 

@@ -108,13 +108,12 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees found.".bright_black());
+        let msg = "• No worktrees found.".bright_black();
+        println!("{msg}");
         println!();
-        println!(
-            "  {} Use '{}' to create your first worktree",
-            "Tip:".bright_black(),
-            "+ Create worktree".green()
-        );
+        let tip_label = "Tip:".bright_black();
+        let create_msg = "+ Create worktree".green();
+        println!("  {tip_label} Use '{create_msg}' to create your first worktree");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -160,7 +159,8 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
         // Print header
         println!();
-        println!("{}", section_header("Worktrees"));
+        let header = section_header("Worktrees");
+        println!("{header}");
 
         let start_idx = current_page * items_per_page;
         let end_idx = ((current_page + 1) * items_per_page).min(sorted_worktrees.len());
@@ -198,7 +198,7 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
         for wt in page_worktrees {
             let icon = get_worktree_icon(wt.is_current);
             let branch_display = if wt.is_current {
-                format!("{} [current]", wt.branch).bright_green()
+                format!("{branch} [current]", branch = wt.branch).bright_green()
             } else {
                 wt.branch.yellow()
             };
@@ -310,21 +310,23 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to search.".yellow());
+        let msg = "• No worktrees to search.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(false);
     }
 
     println!();
-    println!("{}", section_header("Search Worktrees"));
+    let header = section_header("Search Worktrees");
+    println!("{header}");
     println!();
 
     // Create items for fuzzy search
     let items: Vec<String> = worktrees
         .iter()
         .map(|wt| {
-            let mut item = format!("{} ({})", wt.name, wt.branch);
+            let mut item = format!("{name} ({branch})", name = wt.name, branch = wt.branch);
             if wt.is_current {
                 item.push_str(" (current)");
             }
@@ -347,7 +349,8 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if selected_worktree.is_current {
         println!();
-        println!("{}", "• Already in this worktree.".yellow());
+        let msg = "• Already in this worktree.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(false);
@@ -357,21 +360,15 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
     write_switch_path(&selected_worktree.path);
 
     println!();
-    println!(
-        "{} Switching to worktree '{}'",
-        "+".green(),
-        selected_worktree.name.bright_white().bold()
-    );
-    println!(
-        "  {} {}",
-        "Path:".bright_black(),
-        selected_worktree.path.display()
-    );
-    println!(
-        "  {} {}",
-        "Branch:".bright_black(),
-        selected_worktree.branch.yellow()
-    );
+    let plus_sign = "+".green();
+    let worktree_name = selected_worktree.name.bright_white().bold();
+    println!("{plus_sign} Switching to worktree '{worktree_name}'");
+    let path_label = "Path:".bright_black();
+    let path_display = selected_worktree.path.display();
+    println!("  {path_label} {path_display}");
+    let branch_label = "Branch:".bright_black();
+    let branch_name = selected_worktree.branch.yellow();
+    println!("  {branch_label} {branch_name}");
 
     // Execute post-switch hooks
     if let Err(e) = hooks::execute_hooks(
@@ -381,7 +378,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
             worktree_path: selected_worktree.path.clone(),
         },
     ) {
-        utils::print_warning(&format!("Hook execution warning: {}", e));
+        utils::print_warning(&format!("Hook execution warning: {e}"));
     }
 
     Ok(true)
@@ -482,7 +479,8 @@ pub fn create_worktree() -> Result<bool> {
 /// * `false` - If the operation was cancelled or user chose not to switch
 fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     println!();
-    println!("{}", section_header("Create New Worktree"));
+    let header = section_header("Create New Worktree");
+    println!("{header}");
     println!();
 
     // Get existing worktrees to detect pattern
@@ -504,7 +502,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     let name = match validate_worktree_name(&name) {
         Ok(validated_name) => validated_name,
         Err(e) => {
-            utils::print_error(&format!("Invalid worktree name: {}", e));
+            utils::print_error(&format!("Invalid worktree name: {e}"));
             return Ok(false);
         }
     };
@@ -512,7 +510,8 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     // If this is the first worktree, let user choose the pattern
     let final_name = if !has_worktrees {
         println!();
-        println!("{}", "First worktree - choose location:".bright_cyan());
+        let msg = "First worktree - choose location:".bright_cyan();
+        println!("{msg}");
 
         // Get repository name for display
         let repo_name = manager
@@ -524,7 +523,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
         let options = vec![
             format!("Same level as repository (../{name})"),
-            format!("In subdirectory ({repo_name}/{}/{name})", WORKTREES_SUBDIR),
+            format!("In subdirectory ({repo_name}/{WORKTREES_SUBDIR}/{name})"),
             "Custom path (specify relative to project root)".to_string(),
         ];
 
@@ -539,8 +538,8 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         };
 
         match selection {
-            0 => format!("../{}", name),                   // Same level
-            1 => format!("{}/{}", WORKTREES_SUBDIR, name), // Subdirectory pattern
+            0 => format!("../{name}"),                 // Same level
+            1 => format!("{WORKTREES_SUBDIR}/{name}"), // Subdirectory pattern
             2 => {
                 // Custom path input
                 println!();
@@ -565,13 +564,13 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
                 // Validate custom path
                 if let Err(e) = validate_custom_path(&custom_path) {
-                    utils::print_error(&format!("Invalid custom path: {}", e));
+                    utils::print_error(&format!("Invalid custom path: {e}"));
                     return Ok(false);
                 }
 
                 custom_path
             }
-            _ => format!("{}/{}", WORKTREES_SUBDIR, name), // Default fallback
+            _ => format!("{WORKTREES_SUBDIR}/{name}"), // Default fallback
         }
     } else {
         name.clone()
@@ -608,23 +607,21 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Add local branches with laptop icon (laptop emoji takes 2 columns)
                 for branch in &local_branches {
                     if let Some(worktree) = branch_worktree_map.get(branch) {
-                        branch_items.push(format!("💻 {} (in use by '{}')", branch, worktree));
+                        branch_items.push(format!("💻 {branch} (in use by '{worktree}')"));
                     } else {
-                        branch_items.push(format!("💻 {}", branch));
+                        branch_items.push(format!("💻 {branch}"));
                     }
                     branch_refs.push((branch.clone(), false));
                 }
 
                 // Add remote branches with cloud icon (cloud emoji should align with laptop)
                 for branch in &remote_branches {
-                    let full_remote_name = format!("{}{}", GIT_REMOTE_PREFIX, branch);
+                    let full_remote_name = format!("{GIT_REMOTE_PREFIX}{branch}");
                     if let Some(worktree) = branch_worktree_map.get(&full_remote_name) {
-                        branch_items.push(format!(
-                            "⛅️ {} (in use by '{}')",
-                            full_remote_name, worktree
-                        ));
+                        branch_items
+                            .push(format!("⛅️ {full_remote_name} (in use by '{worktree}')"));
                     } else {
-                        branch_items.push(format!("⛅️ {}", full_remote_name));
+                        branch_items.push(format!("⛅️ {full_remote_name}"));
                     }
                     branch_refs.push((branch.clone(), true));
                 }
@@ -701,8 +698,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
                                         if local_branches.contains(&new_branch) {
                                             utils::print_error(&format!(
-                                                "Branch '{}' already exists",
-                                                new_branch
+                                                "Branch '{new_branch}' already exists"
                                             ));
                                             return Ok(false);
                                         }
@@ -722,8 +718,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                 utils::print_warning(&format!(
                                     "A local branch '{}' already exists for remote '{}'",
                                     selected_branch.yellow(),
-                                    format!("{}{}", GIT_REMOTE_PREFIX, selected_branch)
-                                        .bright_blue()
+                                    format!("{GIT_REMOTE_PREFIX}{selected_branch}").bright_blue()
                                 ));
                                 println!();
 
@@ -755,10 +750,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                     Some(0) => {
                                         // Create new branch with worktree name
                                         (
-                                            Some(format!(
-                                                "{}{}",
-                                                GIT_REMOTE_PREFIX, selected_branch
-                                            )),
+                                            Some(format!("{GIT_REMOTE_PREFIX}{selected_branch}")),
                                             Some(name.clone()),
                                         )
                                     }
@@ -782,10 +774,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                 }
                             } else {
                                 // No conflict, proceed normally
-                                (
-                                    Some(format!("{}{}", GIT_REMOTE_PREFIX, selected_branch)),
-                                    None,
-                                )
+                                (Some(format!("{GIT_REMOTE_PREFIX}{selected_branch}")), None)
                             }
                         }
                     }
@@ -801,20 +790,24 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Show preview
     println!();
-    println!("{}", "Preview:".bright_white());
-    println!("  {} {}", "Name:".bright_black(), final_name.bright_green());
+    let preview_label = "Preview:".bright_white();
+    println!("{preview_label}");
+    let name_label = "Name:".bright_black();
+    let name_value = final_name.bright_green();
+    println!("  {name_label} {name_value}");
     if let Some(new_branch) = &new_branch_name {
         let base_branch_name = branch.as_ref().unwrap();
-        println!(
-            "  {} {} (from {})",
-            "New Branch:".bright_black(),
-            new_branch.yellow(),
-            base_branch_name.bright_black()
-        );
+        let branch_label = "New Branch:".bright_black();
+        let branch_value = new_branch.yellow();
+        let base_value = base_branch_name.bright_black();
+        println!("  {branch_label} {branch_value} (from {base_value})");
     } else if let Some(branch_name) = &branch {
-        println!("  {} {}", "Branch:".bright_black(), branch_name.yellow());
+        let branch_label = "Branch:".bright_black();
+        let branch_value = branch_name.yellow();
+        println!("  {branch_label} {branch_value}");
     } else {
-        println!("  {} Current HEAD", "From:".bright_black());
+        let from_label = "From:".bright_black();
+        println!("  {from_label} Current HEAD");
     }
     println!();
 
@@ -839,10 +832,10 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     match result {
         Ok(path) => {
             pb.finish_and_clear();
+            let name_green = name.bright_green();
+            let path_display = path.display();
             utils::print_success(&format!(
-                "Created worktree '{}' at {}",
-                name.bright_green(),
-                path.display()
+                "Created worktree '{name_green}' at {path_display}"
             ));
 
             // Copy configured files
@@ -853,14 +846,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 match file_copy::copy_configured_files(&config.files, &path, manager) {
                     Ok(copied) => {
                         if !copied.is_empty() {
-                            utils::print_success(&format!("Copied {} files", copied.len()));
+                            let copied_count = copied.len();
+                            utils::print_success(&format!("Copied {copied_count} files"));
                             for file in &copied {
-                                println!("  ✓ {}", file);
+                                println!("  ✓ {file}");
                             }
                         }
                     }
                     Err(e) => {
-                        utils::print_warning(&format!("Failed to copy files: {}", e));
+                        utils::print_warning(&format!("Failed to copy files: {e}"));
                     }
                 }
             }
@@ -873,7 +867,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                     worktree_path: path.clone(),
                 },
             ) {
-                utils::print_warning(&format!("Hook execution warning: {}", e));
+                utils::print_warning(&format!("Hook execution warning: {e}"));
             }
 
             // Ask if user wants to switch to the new worktree
@@ -889,11 +883,9 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 write_switch_path(&path);
 
                 println!();
-                println!(
-                    "{} Switching to worktree '{}'",
-                    "+".green(),
-                    name.bright_white().bold()
-                );
+                let plus_sign = "+".green();
+                let worktree_name = name.bright_white().bold();
+                println!("{plus_sign} Switching to worktree '{worktree_name}'");
 
                 // Execute post-switch hooks
                 if let Err(e) = hooks::execute_hooks(
@@ -903,7 +895,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                         worktree_path: path,
                     },
                 ) {
-                    utils::print_warning(&format!("Hook execution warning: {}", e));
+                    utils::print_warning(&format!("Hook execution warning: {e}"));
                 }
 
                 Ok(true) // Indicate that we switched
@@ -915,7 +907,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         }
         Err(e) => {
             pb.finish_and_clear();
-            utils::print_error(&format!("Failed to create worktree: {}", e));
+            utils::print_error(&format!("Failed to create worktree: {e}"));
             println!();
             press_any_key_to_continue()?;
             Ok(false)
@@ -973,7 +965,8 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to delete.".yellow());
+        let msg = "• No worktrees to delete.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -985,7 +978,8 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if deletable_worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees available for deletion.".yellow());
+        let msg = "• No worktrees available for deletion.".yellow();
+        println!("{msg}");
         println!(
             "{}",
             "  (Cannot delete the current worktree)".bright_black()
@@ -996,7 +990,8 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     }
 
     println!();
-    println!("{}", section_header("Delete Worktree"));
+    let header = section_header("Delete Worktree");
+    println!("{header}");
     println!();
 
     let items: Vec<String> = deletable_worktrees
@@ -1017,28 +1012,24 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     // Show confirmation with details
     println!();
-    println!("{}", "⚠ Warning".red().bold());
-    println!(
-        "  {} {}",
-        "Name:".bright_white(),
-        worktree_to_delete.name.yellow()
-    );
-    println!(
-        "  {} {}",
-        "Path:".bright_white(),
-        worktree_to_delete.path.display()
-    );
-    println!(
-        "  {} {}",
-        "Branch:".bright_white(),
-        worktree_to_delete.branch.yellow()
-    );
+    let warning = "⚠ Warning".red().bold();
+    println!("{warning}");
+    let name_label = "Name:".bright_white();
+    let name_value = worktree_to_delete.name.yellow();
+    println!("  {name_label} {name_value}");
+    let path_label = "Path:".bright_white();
+    let path_value = worktree_to_delete.path.display();
+    println!("  {path_label} {path_value}");
+    let branch_label = "Branch:".bright_white();
+    let branch_value = worktree_to_delete.branch.yellow();
+    println!("  {branch_label} {branch_value}");
     println!();
 
     // Ask about branch deletion if it's unique to this worktree
     let mut delete_branch = false;
     if manager.is_branch_unique_to_worktree(&worktree_to_delete.branch, &worktree_to_delete.name)? {
-        println!("{}", "This branch is only used by this worktree.".yellow());
+        let msg = "This branch is only used by this worktree.".yellow();
+        println!("{msg}");
         delete_branch = Confirm::with_theme(&get_theme())
             .with_prompt("Also delete the branch?")
             .default(false)
@@ -1065,34 +1056,30 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
             worktree_path: worktree_to_delete.path.clone(),
         },
     ) {
-        utils::print_warning(&format!("Hook execution warning: {}", e));
+        utils::print_warning(&format!("Hook execution warning: {e}"));
     }
 
     // Delete the worktree
     match manager.remove_worktree(&worktree_to_delete.name) {
         Ok(_) => {
-            utils::print_success(&format!(
-                "Deleted worktree '{}'",
-                worktree_to_delete.name.bright_red()
-            ));
+            let name_red = worktree_to_delete.name.bright_red();
+            utils::print_success(&format!("Deleted worktree '{name_red}'"));
 
             // Delete branch if requested
             if delete_branch {
                 match manager.delete_branch(&worktree_to_delete.branch) {
                     Ok(_) => {
-                        utils::print_success(&format!(
-                            "Deleted branch '{}'",
-                            worktree_to_delete.branch.bright_red()
-                        ));
+                        let branch_red = worktree_to_delete.branch.bright_red();
+                        utils::print_success(&format!("Deleted branch '{branch_red}'"));
                     }
                     Err(e) => {
-                        utils::print_error(&format!("Failed to delete branch: {}", e));
+                        utils::print_error(&format!("Failed to delete branch: {e}"));
                     }
                 }
             }
         }
         Err(e) => {
-            utils::print_error(&format!("Failed to delete worktree: {}", e));
+            utils::print_error(&format!("Failed to delete worktree: {e}"));
         }
     }
 
@@ -1150,14 +1137,16 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees available.".yellow());
+        let msg = "• No worktrees available.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(false);
     }
 
     println!();
-    println!("{}", section_header("Switch Worktree"));
+    let header = section_header("Switch Worktree");
+    println!("{header}");
     println!();
 
     // Sort worktrees for display (current first)
@@ -1196,7 +1185,8 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if selected_worktree.is_current {
         println!();
-        println!("{}", "• Already in this worktree.".yellow());
+        let msg = "• Already in this worktree.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(false);
@@ -1206,21 +1196,15 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     write_switch_path(&selected_worktree.path);
 
     println!();
-    println!(
-        "{} Switching to worktree '{}'",
-        "+".green(),
-        selected_worktree.name.bright_white().bold()
-    );
-    println!(
-        "  {} {}",
-        "Path:".bright_black(),
-        selected_worktree.path.display()
-    );
-    println!(
-        "  {} {}",
-        "Branch:".bright_black(),
-        selected_worktree.branch.yellow()
-    );
+    let plus_sign = "+".green();
+    let worktree_name = selected_worktree.name.bright_white().bold();
+    println!("{plus_sign} Switching to worktree '{worktree_name}'");
+    let path_label = "Path:".bright_black();
+    let path_display = selected_worktree.path.display();
+    println!("  {path_label} {path_display}");
+    let branch_label = "Branch:".bright_black();
+    let branch_name = selected_worktree.branch.yellow();
+    println!("  {branch_label} {branch_name}");
 
     // Execute post-switch hooks
     if let Err(e) = hooks::execute_hooks(
@@ -1230,7 +1214,7 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
             worktree_path: selected_worktree.path.clone(),
         },
     ) {
-        utils::print_warning(&format!("Hook execution warning: {}", e));
+        utils::print_warning(&format!("Hook execution warning: {e}"));
     }
 
     Ok(true)
@@ -1304,7 +1288,8 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to delete.".yellow());
+        let msg = "• No worktrees to delete.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -1316,7 +1301,8 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if deletable_worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees available for deletion.".yellow());
+        let msg = "• No worktrees available for deletion.".yellow();
+        println!("{msg}");
         println!(
             "{}",
             "  (Cannot delete the current worktree)".bright_black()
@@ -1350,7 +1336,8 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if selections.is_empty() {
         println!();
-        println!("{}", "• No worktrees selected.".yellow());
+        let msg = "• No worktrees selected.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -1369,17 +1356,23 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     // Show summary
     println!();
-    println!("{}", "Selected worktrees for deletion:".bright_white());
+    let msg = "Selected worktrees for deletion:".bright_white();
+    println!("{msg}");
     for &idx in &selections {
         let wt = deletable_worktrees[idx];
-        println!("  {} {} ({})", "•".red(), wt.name, wt.branch);
+        let bullet = "•".red();
+        let name = &wt.name;
+        let branch = &wt.branch;
+        println!("  {bullet} {name} ({branch})");
     }
 
     if !branches_to_delete.is_empty() {
         println!();
-        println!("{}", "Branches that will become orphaned:".yellow());
+        let msg = "Branches that will become orphaned:".yellow();
+        println!("{msg}");
         for (branch, _) in &branches_to_delete {
-            println!("  {} {}", "•".yellow(), branch);
+            let bullet = "•".yellow();
+            println!("  {bullet} {branch}");
         }
     }
 
@@ -1423,17 +1416,19 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
                 worktree_path: wt.path.clone(),
             },
         ) {
-            utils::print_warning(&format!("Hook execution warning: {}", e));
+            utils::print_warning(&format!("Hook execution warning: {e}"));
         }
 
         match manager.remove_worktree(&wt.name) {
             Ok(_) => {
-                utils::print_success(&format!("Deleted worktree '{}'", wt.name.bright_red()));
+                let name_red = wt.name.bright_red();
+                utils::print_success(&format!("Deleted worktree '{name_red}'"));
                 deleted_worktrees.push((wt.branch.clone(), wt.name.clone()));
                 success_count += 1;
             }
             Err(e) => {
-                utils::print_error(&format!("Failed to delete '{}': {}", wt.name, e));
+                let name = &wt.name;
+                utils::print_error(&format!("Failed to delete '{name}': {e}"));
                 error_count += 1;
             }
         }
@@ -1453,11 +1448,12 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
             {
                 match manager.delete_branch(branch) {
                     Ok(_) => {
-                        utils::print_success(&format!("Deleted branch '{}'", branch.bright_red()));
+                        let branch_red = branch.bright_red();
+                        utils::print_success(&format!("Deleted branch '{branch_red}'"));
                         branch_success += 1;
                     }
                     Err(e) => {
-                        utils::print_error(&format!("Failed to delete branch '{}': {}", branch, e));
+                        utils::print_error(&format!("Failed to delete branch '{branch}': {e}"));
                         branch_error += 1;
                     }
                 }
@@ -1528,14 +1524,16 @@ fn cleanup_old_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to clean up.".yellow());
+        let msg = "• No worktrees to clean up.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
     }
 
     println!();
-    println!("{}", section_header("Cleanup Old Worktrees"));
+    let header = section_header("Cleanup Old Worktrees");
+    println!("{header}");
     println!();
 
     // Get age threshold
@@ -1622,7 +1620,8 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees to rename.".yellow());
+        let msg = "• No worktrees to rename.".yellow();
+        println!("{msg}");
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -1634,7 +1633,8 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if renameable_worktrees.is_empty() {
         println!();
-        println!("{}", "• No worktrees available for renaming.".yellow());
+        let msg = "• No worktrees available for renaming.".yellow();
+        println!("{msg}");
         println!(
             "{}",
             "  (Cannot rename the current worktree)".bright_black()
@@ -1645,7 +1645,8 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     }
 
     println!();
-    println!("{}", section_header("Rename Worktree"));
+    let header = section_header("Rename Worktree");
+    println!("{header}");
     println!();
 
     let items: Vec<String> = renameable_worktrees
@@ -1681,7 +1682,7 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     let new_name = match validate_worktree_name(&new_name) {
         Ok(validated_name) => validated_name,
         Err(e) => {
-            utils::print_error(&format!("Invalid worktree name: {}", e));
+            utils::print_error(&format!("Invalid worktree name: {e}"));
             println!();
             press_any_key_to_continue()?;
             return Ok(());
@@ -1711,34 +1712,29 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     // Show preview
     println!();
-    println!("{}", "Preview:".bright_white());
-    println!(
-        "  {} {} → {}",
-        "Worktree:".bright_white(),
-        worktree.name,
-        new_name.bright_green()
-    );
+    let preview_label = "Preview:".bright_white();
+    println!("{preview_label}");
+    let worktree_label = "Worktree:".bright_white();
+    let old_name = &worktree.name;
+    let new_name_green = new_name.bright_green();
+    println!("  {worktree_label} {old_name} → {new_name_green}");
 
     let new_path = worktree.path.parent().unwrap().join(&new_name);
-    println!(
-        "  {} {} → {}",
-        "Path:".bright_white(),
-        worktree.path.display(),
-        new_path.display().to_string().bright_green()
-    );
+    let path_label = "Path:".bright_white();
+    let old_path = worktree.path.display();
+    let new_path_green = new_path.display().to_string().bright_green();
+    println!("  {path_label} {old_path} → {new_path_green}");
 
     if rename_branch {
         let new_branch = if worktree.branch.starts_with("feature/") {
-            format!("feature/{}", new_name)
+            format!("feature/{new_name}")
         } else {
             new_name.clone()
         };
-        println!(
-            "  {} {} → {}",
-            "Branch:".bright_white(),
-            worktree.branch,
-            new_branch.bright_green()
-        );
+        let branch_label = "Branch:".bright_white();
+        let old_branch = &worktree.branch;
+        let new_branch_green = new_branch.bright_green();
+        println!("  {branch_label} {old_branch} → {new_branch_green}");
     }
 
     println!();
@@ -1753,7 +1749,7 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     }
 
     // Perform the rename
-    utils::print_progress(&format!("Renaming worktree to '{}'...", new_name));
+    utils::print_progress(&format!("Renaming worktree to '{new_name}'..."));
 
     match manager.rename_worktree(&worktree.name, &new_name) {
         Ok(_) => {
@@ -1766,12 +1762,12 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
             // Rename branch if requested
             if rename_branch {
                 let new_branch = if worktree.branch.starts_with("feature/") {
-                    format!("feature/{}", new_name)
+                    format!("feature/{new_name}")
                 } else {
                     new_name.clone()
                 };
 
-                utils::print_progress(&format!("Renaming branch to '{}'...", new_branch));
+                utils::print_progress(&format!("Renaming branch to '{new_branch}'..."));
 
                 match manager.rename_branch(&worktree.branch, &new_branch) {
                     Ok(_) => {
@@ -1782,13 +1778,13 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
                         ));
                     }
                     Err(e) => {
-                        utils::print_error(&format!("Failed to rename branch: {}", e));
+                        utils::print_error(&format!("Failed to rename branch: {e}"));
                     }
                 }
             }
         }
         Err(e) => {
-            utils::print_error(&format!("Failed to rename worktree: {}", e));
+            utils::print_error(&format!("Failed to rename worktree: {e}"));
         }
     }
 
@@ -1866,7 +1862,7 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
         .iter()
         .any(|&reserved| reserved.to_lowercase() == name_lower)
     {
-        return Err(anyhow!("Worktree name '{}' is reserved by git", name));
+        return Err(anyhow!("Worktree name '{name}' is reserved by git"));
     }
 
     // Check for names starting with dot (hidden files)
@@ -2026,7 +2022,7 @@ pub fn validate_custom_path(path: &str) -> Result<()> {
                         .iter()
                         .any(|&reserved| reserved.to_lowercase() == name_lower)
                     {
-                        return Err(anyhow!("Path component '{}' is reserved by git", name_str));
+                        return Err(anyhow!("Path component '{name_str}' is reserved by git"));
                     }
                 }
             }
@@ -2321,7 +2317,8 @@ pub fn edit_hooks() -> Result<()> {
     use std::process::Command;
 
     println!();
-    println!("{}", section_header("Edit Hooks Configuration"));
+    let header = section_header("Edit Hooks Configuration");
+    println!("{header}");
     println!();
 
     // Find the config file location using the same logic as Config::load()
@@ -2336,11 +2333,12 @@ pub fn edit_hooks() -> Result<()> {
 
     // Create the file if it doesn't exist
     if !config_path.exists() {
-        println!("{}", "• No configuration file found.".yellow());
+        let msg = "• No configuration file found.".yellow();
+        println!("{msg}");
         println!();
 
         let create = Confirm::with_theme(&get_theme())
-            .with_prompt(format!("Create {}?", CONFIG_FILE_NAME))
+            .with_prompt(format!("Create {CONFIG_FILE_NAME}?"))
             .default(true)
             .interact_opt()?
             .unwrap_or(false);
@@ -2385,7 +2383,7 @@ copy = [
 "#;
 
             std::fs::write(&config_path, template)?;
-            utils::print_success(&format!("Created {} with template", CONFIG_FILE_NAME));
+            utils::print_success(&format!("Created {CONFIG_FILE_NAME} with template"));
         } else {
             return Ok(());
         }
@@ -2421,10 +2419,11 @@ copy = [
             utils::print_warning("Editor exited with non-zero status");
         }
         Err(e) => {
-            utils::print_error(&format!("Failed to open editor: {}", e));
+            utils::print_error(&format!("Failed to open editor: {e}"));
             println!();
             println!("You can manually edit the file at:");
-            println!("  {}", config_path.display().to_string().bright_white());
+            let path_str = config_path.display().to_string().bright_white();
+            println!("  {path_str}");
         }
     }
 

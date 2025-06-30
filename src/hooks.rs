@@ -127,7 +127,7 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
     let config = Config::load()?;
 
     if let Some(commands) = config.hooks.get(hook_type) {
-        println!("Running {} hooks...", hook_type);
+        println!("Running {hook_type} hooks...");
 
         for cmd in commands {
             // Replace template placeholders with actual values
@@ -138,7 +138,7 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
                     &context.worktree_path.display().to_string(),
                 );
 
-            println!("  > {}", expanded_cmd);
+            println!("  > {expanded_cmd}");
 
             // Execute the command in a shell for maximum compatibility
             // This allows complex commands with pipes, redirects, etc.
@@ -164,12 +164,12 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to wait for hook command: {}", e);
+                            eprintln!("Failed to wait for hook command: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to execute hook command: {}", e);
+                    eprintln!("Failed to execute hook command: {e}");
                 }
             }
         }

@@ -105,7 +105,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.version {
-        println!("git-workers v{}", env!("CARGO_PKG_VERSION"));
+        let version = env!("CARGO_PKG_VERSION");
+        println!("git-workers v{version}");
         return Ok(());
     }
 
@@ -129,21 +130,16 @@ fn main() -> Result<()> {
         let repo_info = get_repository_info();
 
         println!();
-        println!(
-            "{}",
-            format!(
-                "Git Workers v{} - Interactive Worktree Manager",
-                env!("CARGO_PKG_VERSION")
-            )
+        let version = env!("CARGO_PKG_VERSION");
+        let title = format!("Git Workers v{version} - Interactive Worktree Manager")
             .bright_cyan()
-            .bold()
-        );
-        println!("{}", header_separator());
-        println!(
-            "{} {}",
-            "Repository:".bright_white(),
-            repo_info.bright_yellow().bold()
-        );
+            .bold();
+        println!("{title}");
+        let separator = header_separator();
+        println!("{separator}");
+        let label = "Repository:".bright_white();
+        let info = repo_info.bright_yellow().bold();
+        println!("{label} {info}");
         println!();
 
         // Build menu items
@@ -174,7 +170,8 @@ fn main() -> Result<()> {
             None => {
                 // User pressed ESC - exit cleanly
                 clear_screen(&term);
-                println!("{}", "Exiting Git Workers...".bright_black());
+                let exit_msg = "Exiting Git Workers...".bright_black();
+                println!("{exit_msg}");
                 break;
             }
         };
@@ -185,7 +182,8 @@ fn main() -> Result<()> {
             MenuAction::Continue => continue,
             MenuAction::Exit => {
                 clear_screen(&term);
-                println!("{}", "Exiting Git Workers...".bright_black());
+                let exit_msg = "Exiting Git Workers...".bright_black();
+                println!("{exit_msg}");
                 break;
             }
             MenuAction::ExitAfterSwitch => {

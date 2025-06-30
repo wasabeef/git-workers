@@ -199,6 +199,27 @@ Since Git lacks native rename functionality:
   - `worktree_path_test.rs`: Tests for path resolution and edge cases
   - `create_worktree_integration_test.rs`: Integration tests for worktree creation
 
+### String Formatting
+
+- **ALWAYS use inline variable syntax in format! macros**: `format!("{variable}")` instead of `format!("{}", variable)`
+- This applies to ALL format-like macros: `format!`, `println!`, `eprintln!`, `log::info!`, `log::warn!`, `log::error!`, etc.
+- Examples:
+
+  ```rust
+  // ✅ Correct
+  format!("Device {name} created successfully")
+  println!("Found {count} devices")
+  log::info!("Starting device {identifier}")
+
+  // ❌ Incorrect
+  format!("Device {} created successfully", name)
+  println!("Found {} devices", count)
+  log::info!("Starting device {}", identifier)
+  ```
+
+- This rule is enforced by `clippy::uninlined_format_args` which treats violations as errors in CI
+- Apply this consistently across ALL files including main source, tests, examples, and binary targets
+
 ### Important Constraints
 
 - Only works within Git repositories

@@ -8,7 +8,7 @@ use colored::*;
 
 // UI Messages
 pub const MSG_PRESS_ANY_KEY: &str = "Press any key to continue...";
-pub const MSG_SWITCH_FILE_WARNING: &str = "Warning: Failed to write switch file: {}";
+pub const MSG_SWITCH_FILE_WARNING_PREFIX: &str = "Warning: Failed to write switch file: ";
 
 // UI Formatting
 pub const SEPARATOR_WIDTH: usize = 40;
@@ -48,11 +48,9 @@ pub const MSG_CANNOT_RENAME_CURRENT: &str = "  (Cannot rename the current worktr
 
 /// Creates a section header with title and separator
 pub fn section_header(title: &str) -> String {
-    format!(
-        "{}\n{}",
-        title.bright_cyan().bold(),
-        "=".repeat(SEPARATOR_WIDTH).bright_blue()
-    )
+    let title_formatted = title.bright_cyan().bold();
+    let separator = "=".repeat(SEPARATOR_WIDTH).bright_blue();
+    format!("{title_formatted}\n{separator}")
 }
 
 /// Creates a main header separator

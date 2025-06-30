@@ -87,7 +87,7 @@ impl WorktreeLock {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
                     anyhow!("Another git-workers process is currently creating a worktree. Please wait and try again.")
                 } else {
-                    anyhow!("Failed to create lock file: {}", e)
+                    anyhow!("Failed to create lock file: {e}")
                 }
             })?;
 
@@ -1015,7 +1015,7 @@ impl GitWorktreeManager {
                 branch.delete()?;
                 Ok(())
             }
-            Err(_) => Err(anyhow!("Branch '{}' not found", branch_name)),
+            Err(_) => Err(anyhow!("Branch '{branch_name}' not found")),
         }
     }
 
@@ -1088,7 +1088,8 @@ impl GitWorktreeManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Failed to rename branch: {}", stderr.trim()));
+            let error_msg = stderr.trim();
+            return Err(anyhow!("Failed to rename branch: {error_msg}"));
         }
 
         Ok(())
@@ -1262,14 +1263,16 @@ impl GitWorktreeManager {
             // Update the gitdir file
             let gitdir_file = new_worktree_git_dir.join("gitdir");
             if gitdir_file.exists() {
-                fs::write(&gitdir_file, format!("{}/.git\n", new_path.display()))?;
+                let new_path_str = new_path.display();
+                fs::write(&gitdir_file, format!("{new_path_str}/.git\n"))?;
             }
         }
 
         // Step 3: Update the .git file in the worktree
         let git_file_path = new_path.join(".git");
         if git_file_path.exists() {
-            let git_file_content = format!("gitdir: {}\n", new_worktree_git_dir.display());
+            let git_dir_str = new_worktree_git_dir.display();
+            let git_file_content = format!("gitdir: {git_dir_str}\n");
             fs::write(&git_file_path, git_file_content)?;
         }
 
@@ -1322,8 +1325,8 @@ impl GitWorktreeManager {
         let branch_name = head.shorthand().ok_or_else(|| anyhow!("No branch name"))?;
 
         // Try to find upstream branch
-        let upstream_name = format!("origin/{}", branch_name);
-        if let Ok(upstream) = repo.find_reference(&format!("refs/remotes/{}", upstream_name)) {
+        let upstream_name = format!("origin/{branch_name}");
+        if let Ok(upstream) = repo.find_reference(&format!("refs/remotes/{upstream_name}")) {
             let upstream_oid = upstream.target().ok_or_else(|| anyhow!("No target"))?;
             let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
             Ok((ahead, behind))
