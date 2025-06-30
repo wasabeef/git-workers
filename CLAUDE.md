@@ -81,6 +81,17 @@ source /path/to/git-workers/shell/gw.sh
 - Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
 - Smart mode automatically handles branch conflicts and offers appropriate actions
 
+### Custom Path Support
+
+- Added third option for first worktree creation: "Custom path (specify relative to project root)"
+- Allows users to specify arbitrary relative paths for worktree creation
+- Comprehensive path validation with security checks:
+  - Prevents absolute paths
+  - Validates against filesystem-incompatible characters
+  - Blocks git reserved names in path components
+  - Prevents excessive path traversal (max one level above project root)
+  - Cross-platform compatibility checks
+
 ### Key Methods Added/Modified
 
 - **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
@@ -88,6 +99,8 @@ source /path/to/git-workers/shell/gw.sh
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
 - **`copy_configured_files()`**: Copies files specified in config to new worktrees
 - **`create_worktree_from_head()`**: Fixed path resolution for non-bare repositories (converts relative paths to absolute)
+- **`validate_custom_path()`**: Validates custom paths for security and compatibility
+- **`create_worktree_internal()`**: Enhanced with custom path input option
 
 ## Architecture
 
@@ -275,6 +288,15 @@ Implemented file-based locking to prevent race conditions:
 - **Error Messages**: Clear feedback when another process is creating worktrees
 - **Automatic Cleanup**: Lock files are automatically removed when operations complete
 
+#### Custom Path Validation
+
+Added comprehensive validation for user-specified worktree paths:
+
+- **Path Security**: Validates against path traversal attacks and excessive directory navigation
+- **Cross-Platform Compatibility**: Checks for Windows reserved characters even on non-Windows systems
+- **Git Reserved Names**: Prevents conflicts with git internal directories in path components
+- **Path Format Validation**: Ensures proper relative path format (no absolute paths, no trailing slashes)
+
 **Solution**: Convert relative paths to absolute paths before passing them to the git command, ensuring consistent behavior regardless of the working directory.
 
 ## Test Coverage
@@ -282,8 +304,10 @@ Implemented file-based locking to prevent race conditions:
 The following test files have been added/updated for v0.3.0:
 
 - `tests/worktree_path_test.rs`: 10 tests for path resolution edge cases
-- `tests/create_worktree_integration_test.rs`: 5 integration tests including bare repository scenarios  
+- `tests/create_worktree_integration_test.rs`: 5 integration tests including bare repository scenarios
 - `tests/worktree_commands_test.rs`: 3 new tests for HEAD creation patterns
 - `tests/validate_worktree_name_test.rs`: 7 tests for name validation including edge cases
 - `tests/file_copy_size_test.rs`: 6 tests for file size limits and copying behavior
 - `tests/worktree_lock_test.rs`: 5 tests for concurrent access control
+- `tests/validate_custom_path_test.rs`: 9 tests for custom path validation including security checks
+- Enhanced `tests/create_worktree_integration_test.rs`: 2 additional tests for custom path creation

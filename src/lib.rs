@@ -12,6 +12,8 @@
 //! - **Batch Operations**: Perform operations on multiple worktrees at once
 //! - **Search Functionality**: Fuzzy search through worktrees
 //! - **Rename Support**: Complete worktree renaming including Git metadata
+//! - **Custom Paths**: Flexible worktree placement with validated custom paths
+//! - **File Copying**: Automatically copy configured files to new worktrees
 //!
 //! # Architecture
 //!

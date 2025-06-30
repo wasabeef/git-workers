@@ -395,25 +395,35 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 /// 2. **Location Selection** (first worktree only):
 ///    - Same level as repository: `../worktree-name`
 ///    - In subdirectory (recommended): `../repo/worktrees/worktree-name`
+///    - Custom path: User-specified relative path (e.g., `../custom/path`)
 /// 3. **Branch Selection**:
 ///    - Create from current HEAD
 ///    - Create from existing branch (shows branch list)
 /// 4. **Creation**: Creates the worktree with progress indication
-/// 5. **Post-create Hooks**: Executes any configured post-create hooks
-/// 6. **Switch Option**: Asks if user wants to switch to the new worktree
+/// 5. **File Copy**: Copies configured files (e.g., `.env`) from main worktree
+/// 6. **Post-create Hooks**: Executes any configured post-create hooks
+/// 7. **Switch Option**: Asks if user wants to switch to the new worktree
 ///
 /// # Worktree Patterns
 ///
 /// The first worktree establishes the pattern for subsequent worktrees.
 /// If the first worktree is created at the same level as the repository,
-/// all future worktrees follow that pattern.
+/// all future worktrees follow that pattern. The custom path option allows
+/// breaking this pattern for special cases.
 ///
 /// # Path Handling
 ///
 /// - "Same level" paths (`../name`) are canonicalized for clean display without `..`
 /// - "In subdirectory" paths create worktrees in `worktrees/` folder within the repository
+/// - "Custom path" allows any relative path, validated for security and compatibility
 /// - All paths are resolved to absolute canonical paths before creation
 /// - Parent directories are created automatically if needed
+///
+/// # Custom Path Examples
+///
+/// - `../experiments/feature-x` - Organize experiments separately
+/// - `temp/quick-fix` - Temporary worktrees in project
+/// - `../../shared-worktrees/project-a` - Shared location (max one level up from parent)
 ///
 /// # Returns
 ///
@@ -426,6 +436,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 /// - Git repository operations fail
 /// - File system operations fail
 /// - User input is invalid
+/// - Custom path validation fails
 pub fn create_worktree() -> Result<bool> {
     let manager = GitWorktreeManager::new()?;
     create_worktree_internal(&manager)
@@ -443,15 +454,32 @@ pub fn create_worktree() -> Result<bool> {
 /// - Detects existing worktree patterns for consistency
 /// - Handles both branch and HEAD-based creation
 /// - Executes lifecycle hooks at appropriate times
+/// - Supports custom path input for flexible worktree organization
 ///
 /// # Path Handling
 ///
-/// For first-time worktree creation, offers two location patterns:
-/// - Same level as repository (`../name`): Creates worktrees as siblings
-/// - In subdirectory (`worktrees/name`): Creates within repository structure
+/// For first-time worktree creation, offers three location patterns:
+/// 1. **Same level as repository** (`../name`): Creates worktrees as siblings to the main repository
+/// 2. **In subdirectory** (`worktrees/name`): Creates within repository structure (recommended)
+/// 3. **Custom path**: Allows users to specify any relative path, validated by `validate_custom_path()`
 ///
 /// The chosen pattern is then used for subsequent worktrees when simple names
 /// are provided, ensuring consistent organization.
+///
+/// # Custom Path Feature
+///
+/// When users select "Custom path", they can specify any relative path for the worktree.
+/// This enables flexible project organization such as:
+/// - Grouping by feature type: `features/ui/new-button`, `features/api/auth`
+/// - Temporary locations: `../temp/experiment-123`
+/// - Project-specific conventions: `workspaces/team-a/feature`
+///
+/// All custom paths are validated for security and compatibility before use.
+///
+/// # Returns
+///
+/// * `true` - If a worktree was created and the user switched to it
+/// * `false` - If the operation was cancelled or user chose not to switch
 fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     println!();
     println!("{}", section_header("Create New Worktree"));
@@ -497,6 +525,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         let options = vec![
             format!("Same level as repository (../{name})"),
             format!("In subdirectory ({repo_name}/{}/{name})", WORKTREES_SUBDIR),
+            "Custom path (specify relative to project root)".to_string(),
         ];
 
         let selection = match Select::with_theme(&get_theme())
@@ -511,7 +540,38 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
         match selection {
             0 => format!("../{}", name),                   // Same level
-            _ => format!("{}/{}", WORKTREES_SUBDIR, name), // Subdirectory pattern
+            1 => format!("{}/{}", WORKTREES_SUBDIR, name), // Subdirectory pattern
+            2 => {
+                // Custom path input
+                println!();
+                println!(
+                    "{}",
+                    "Enter custom path (relative to project root):".bright_cyan()
+                );
+                println!(
+                    "{}",
+                    "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed()
+                );
+
+                let custom_path = match input_esc("Custom path") {
+                    Some(path) => path.trim().to_string(),
+                    None => return Ok(false),
+                };
+
+                if custom_path.is_empty() {
+                    utils::print_error("Custom path cannot be empty");
+                    return Ok(false);
+                }
+
+                // Validate custom path
+                if let Err(e) = validate_custom_path(&custom_path) {
+                    utils::print_error(&format!("Invalid custom path: {}", e));
+                    return Ok(false);
+                }
+
+                custom_path
+            }
+            _ => format!("{}/{}", WORKTREES_SUBDIR, name), // Default fallback
         }
     } else {
         name.clone()
@@ -1845,6 +1905,151 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
     }
 
     Ok(name.to_string())
+}
+
+/// Validates a custom path for worktree creation
+///
+/// This function ensures that the custom path is safe and valid for use
+/// as a worktree path, preventing potential security issues and file system
+/// incompatibilities. It performs comprehensive validation to ensure the path
+/// works across different operating systems and doesn't conflict with Git internals.
+///
+/// # Arguments
+///
+/// * `path` - The custom path to validate (must be relative to project root)
+///
+/// # Returns
+///
+/// * `Ok(())` - The path is valid and safe to use
+/// * `Err` - The path violates one or more validation rules
+///
+/// # Validation Rules
+///
+/// 1. **Empty paths**: Path cannot be empty or contain only whitespace
+/// 2. **Null bytes**: Path cannot contain null bytes (`\0`)
+/// 3. **Reserved characters**: Cannot contain Windows reserved characters for cross-platform compatibility:
+///    - `<` `>` `:` `"` `|` `?` `*`
+/// 4. **Absolute paths**: Must be relative, not absolute (e.g., `/path` or `C:\path` are invalid)
+/// 5. **Path traversal**: Limited to one level above project root (e.g., `../sibling` is ok, `../../parent` is not)
+/// 6. **Path format**: Cannot contain consecutive slashes (`//`) or start/end with slash
+/// 7. **Reserved names**: Path components cannot be Git reserved names (case-insensitive):
+///    - `.git`, `HEAD`, `refs`, `hooks`, `info`, `objects`, `logs`
+///
+/// # Security Considerations
+///
+/// This function is designed to prevent:
+/// - Path traversal attacks that could access system files
+/// - Creation of worktrees in inappropriate locations
+/// - Conflicts with Git's internal directory structure
+/// - File system incompatibilities across platforms
+///
+/// # Examples
+///
+/// ```no_run
+/// use git_workers::commands::validate_custom_path;
+///
+/// // Valid paths
+/// assert!(validate_custom_path("../my-worktree").is_ok());
+/// assert!(validate_custom_path("temp/feature-branch").is_ok());
+/// assert!(validate_custom_path("worktrees/experiment").is_ok());
+/// assert!(validate_custom_path("./local-test").is_ok());
+///
+/// // Invalid paths
+/// assert!(validate_custom_path("/absolute/path").is_err());     // Absolute path
+/// assert!(validate_custom_path("../../too-far").is_err());      // Too many parent dirs
+/// assert!(validate_custom_path("path/with//double").is_err());  // Consecutive slashes
+/// assert!(validate_custom_path("ends/with/").is_err());         // Trailing slash
+/// assert!(validate_custom_path("has:colon").is_err());          // Reserved character
+/// assert!(validate_custom_path("path/.git/config").is_err());   // Contains .git
+/// ```
+///
+/// # Usage in Worktree Creation
+///
+/// This function is called when users select the "Custom path" option during
+/// worktree creation. It ensures that user-provided paths are safe before
+/// passing them to Git's worktree creation commands.
+pub fn validate_custom_path(path: &str) -> Result<()> {
+    use std::path::Path;
+
+    // Trim the path
+    let path = path.trim();
+
+    // Check for empty path
+    if path.is_empty() {
+        return Err(anyhow!("Custom path cannot be empty"));
+    }
+
+    // Check for null bytes
+    if path.contains('\0') {
+        return Err(anyhow!("Custom path cannot contain null bytes"));
+    }
+
+    // Check for Windows reserved characters (for cross-platform compatibility)
+    const RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
+    if path.chars().any(|c| RESERVED_CHARS.contains(&c)) {
+        return Err(anyhow!(
+            "Custom path contains reserved characters: {}",
+            RESERVED_CHARS.iter().collect::<String>()
+        ));
+    }
+
+    // Check if path is absolute
+    if Path::new(path).is_absolute() {
+        return Err(anyhow!("Custom path must be relative, not absolute"));
+    }
+
+    // Check for consecutive slashes
+    if path.contains("//") {
+        return Err(anyhow!("Custom path cannot contain consecutive slashes"));
+    }
+
+    // Check for starting or ending with slash
+    if path.starts_with('/') || path.ends_with('/') {
+        return Err(anyhow!("Custom path cannot start or end with slash"));
+    }
+
+    // Check for dangerous path traversal
+    let path_obj = Path::new(path);
+    let mut depth = 0i32;
+
+    for component in path_obj.components() {
+        match component {
+            std::path::Component::Normal(name) => {
+                depth += 1;
+
+                // Check for reserved names in path components
+                if let Some(name_str) = name.to_str() {
+                    const RESERVED_NAMES: &[&str] =
+                        &[".git", "HEAD", "refs", "hooks", "info", "objects", "logs"];
+                    let name_lower = name_str.to_lowercase();
+                    if RESERVED_NAMES
+                        .iter()
+                        .any(|&reserved| reserved.to_lowercase() == name_lower)
+                    {
+                        return Err(anyhow!("Path component '{}' is reserved by git", name_str));
+                    }
+                }
+            }
+            std::path::Component::ParentDir => {
+                depth -= 1;
+                // Allow going up to project parent, but not further
+                // depth can be -1 (one level up from project root) but not -2 or less
+                if depth < -1 {
+                    return Err(anyhow!(
+                        "Custom path cannot go above project root (too many '../')"
+                    ));
+                }
+            }
+            std::path::Component::CurDir => {
+                // ./ is allowed but not very useful
+            }
+            _ => {
+                return Err(anyhow!("Custom path contains invalid components"));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Finds the configuration file path using the same logic as Config::load()

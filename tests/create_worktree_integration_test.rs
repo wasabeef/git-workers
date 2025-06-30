@@ -145,3 +145,46 @@ fn test_create_worktree_pattern_detection() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_create_worktree_custom_path() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_environment()?;
+
+    // Test custom relative path
+    let custom_worktree = manager.create_worktree("../custom-location/my-worktree", None)?;
+
+    // Verify worktree was created at the specified custom location
+    assert!(custom_worktree.exists());
+    assert_eq!(
+        custom_worktree.file_name().unwrap().to_str().unwrap(),
+        "my-worktree"
+    );
+
+    // Verify it's in the custom directory structure
+    assert!(custom_worktree
+        .to_string_lossy()
+        .contains("custom-location"));
+
+    Ok(())
+}
+
+#[test]
+fn test_create_worktree_custom_subdirectory() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_environment()?;
+
+    // Test custom subdirectory path
+    let custom_worktree = manager.create_worktree("temp/experiments/test-feature", None)?;
+
+    // Verify worktree was created at the specified location
+    assert!(custom_worktree.exists());
+    assert_eq!(
+        custom_worktree.file_name().unwrap().to_str().unwrap(),
+        "test-feature"
+    );
+
+    // Verify it's in the correct subdirectory structure
+    assert!(custom_worktree.to_string_lossy().contains("temp"));
+    assert!(custom_worktree.to_string_lossy().contains("experiments"));
+
+    Ok(())
+}
