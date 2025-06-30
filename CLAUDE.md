@@ -87,6 +87,7 @@ source /path/to/git-workers/shell/gw.sh
 - **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
 - **`copy_configured_files()`**: Copies files specified in config to new worktrees
+- **`create_worktree_from_head()`**: Fixed path resolution for non-bare repositories (converts relative paths to absolute)
 
 ## Architecture
 
@@ -176,11 +177,14 @@ Since Git lacks native rename functionality:
 
 ### Testing Considerations
 
-- Integration tests in `tests/` directory (27 test files)
+- Integration tests in `tests/` directory (30 test files)
 - Some tests are flaky in parallel execution (marked with `#[ignore]`)
 - CI sets `CI=true` environment variable to skip flaky tests
 - Run with `--test-threads=1` for reliable results
 - Use `--nocapture` to see test output for debugging
+- New test files added:
+  - `worktree_path_test.rs`: Tests for path resolution and edge cases
+  - `create_worktree_integration_test.rs`: Integration tests for worktree creation
 
 ### Important Constraints
 
@@ -233,3 +237,13 @@ copy = [".env", ".env.local", "config/local.json"]
    - Symlink detection with warnings
    - Maximum directory depth limit (50 levels)
    - Preserves file permissions
+
+## Bug Fixes
+
+### v0.3.0 Worktree Creation Path Resolution
+
+Fixed an issue where creating worktrees from HEAD in non-bare repositories could fail when using relative paths like `../worktree-name`. The fix ensures that relative paths are resolved from the current working directory rather than from the git directory.
+
+**Root Cause**: The `git worktree add` command was being executed with `current_dir` set to the git directory, causing relative paths to be interpreted incorrectly.
+
+**Solution**: Convert relative paths to absolute paths before passing them to the git command, ensuring consistent behavior regardless of the working directory.

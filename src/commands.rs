@@ -443,6 +443,15 @@ pub fn create_worktree() -> Result<bool> {
 /// - Detects existing worktree patterns for consistency
 /// - Handles both branch and HEAD-based creation
 /// - Executes lifecycle hooks at appropriate times
+///
+/// # Path Handling
+///
+/// For first-time worktree creation, offers two location patterns:
+/// - Same level as repository (`../name`): Creates worktrees as siblings
+/// - In subdirectory (`worktrees/name`): Creates within repository structure
+///
+/// The chosen pattern is then used for subsequent worktrees when simple names
+/// are provided, ensuring consistent organization.
 fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     println!();
     println!("{}", section_header("Create New Worktree"));

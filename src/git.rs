@@ -2,7 +2,7 @@
 //!
 //! This module provides the core Git operations for managing worktrees,
 //! including creation, deletion, listing, and renaming. It handles both
-//! regular and bare repositories.
+//! regular and bare repositories with proper path resolution.
 //!
 //! # Features
 //!
@@ -12,6 +12,7 @@
 //! - **Worktree Renaming**: Complete rename including directory, metadata, and optional branch
 //! - **Pattern Detection**: Automatically detect and follow worktree organization patterns
 //! - **Bare Repository Support**: Special handling for bare repositories
+//! - **Path Resolution**: Proper handling of relative and absolute paths for worktree creation
 //!
 //! # Examples
 //!
@@ -760,25 +761,49 @@ impl GitWorktreeManager {
 
     /// Creates a worktree from the current HEAD
     ///
+    /// This method creates a new worktree from the current HEAD commit, automatically
+    /// creating a new branch named after the worktree. It handles path resolution
+    /// to ensure consistent behavior across different working directories.
+    ///
     /// # Arguments
     ///
-    /// * `path` - The filesystem path for the new worktree
-    /// * `name` - The name for the worktree (used by git2 API)
+    /// * `path` - The filesystem path for the new worktree (can be relative or absolute)
+    /// * `name` - The name for the worktree (currently unused, kept for API compatibility)
+    ///
+    /// # Path Resolution
+    ///
+    /// - Relative paths are resolved from the current working directory
+    /// - Absolute paths are used as-is
+    /// - This ensures that paths like `../worktree` work correctly regardless of
+    ///   whether the command is run from the repository root or a subdirectory
     ///
     /// # Implementation Notes
     ///
-    /// - For bare repositories: Uses git CLI command
-    /// - For normal repositories: Uses git2 API
+    /// - Uses git CLI command for both bare and non-bare repositories
+    /// - Automatically creates a new branch with the worktree name
+    /// - The git command is executed from the repository's git directory
     ///
     /// # Returns
     ///
-    /// The path to the created worktree
+    /// The canonicalized absolute path to the created worktree
     ///
     /// # Errors
     ///
-    /// Returns an error if worktree creation fails
+    /// Returns an error if:
+    /// - The current directory cannot be determined
+    /// - The git command fails (e.g., path already exists, no commits)
+    /// - Path canonicalization fails after creation
     fn create_worktree_from_head(&self, path: &Path, _name: &str) -> Result<PathBuf> {
         use std::process::Command;
+
+        // Convert to absolute path to ensure consistent interpretation by git command
+        // This prevents issues when path is relative and current_dir is different
+        let absolute_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            // Resolve relative path from current working directory, not from get_git_dir()
+            std::env::current_dir()?.join(path)
+        };
 
         // For both bare and non-bare repositories, use git command without specifying HEAD
         // This will create a new branch with the worktree name automatically
@@ -786,7 +811,7 @@ impl GitWorktreeManager {
             .current_dir(self.get_git_dir()?)
             .arg("worktree")
             .arg("add")
-            .arg(path)
+            .arg(&absolute_path)
             .output()?;
 
         if !output.status.success() {
@@ -796,8 +821,8 @@ impl GitWorktreeManager {
             ));
         }
 
-        // Return the canonicalized path
-        path.canonicalize().or_else(|_| Ok(path.to_path_buf()))
+        // Return the canonicalized path, or the absolute path if canonicalization fails
+        absolute_path.canonicalize().or_else(|_| Ok(absolute_path))
     }
 
     /// Removes a worktree by name

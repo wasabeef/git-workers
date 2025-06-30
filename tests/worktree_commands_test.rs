@@ -171,6 +171,81 @@ fn test_delete_branch() -> Result<()> {
 }
 
 #[test]
+fn test_create_worktree_from_head_non_bare() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_repo()?;
+
+    // Test creating worktree from HEAD in non-bare repository
+    let worktree_name = "../head-worktree";
+    let worktree_path = manager.create_worktree(worktree_name, None)?;
+
+    // Verify worktree exists
+    assert!(worktree_path.exists());
+    assert!(worktree_path.is_dir());
+
+    // Verify it created a new branch
+    let worktrees = manager.list_worktrees()?;
+    let head_wt = worktrees.iter().find(|w| w.name == "head-worktree");
+    assert!(head_wt.is_some());
+
+    // Should have created a branch named after the worktree
+    assert_eq!(head_wt.unwrap().branch, "head-worktree");
+
+    Ok(())
+}
+
+#[test]
+fn test_create_worktree_first_pattern_subdirectory() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_repo()?;
+
+    // Verify no worktrees exist yet
+    let initial_worktrees = manager.list_worktrees()?;
+    assert_eq!(initial_worktrees.len(), 0);
+
+    // Create first worktree with subdirectory pattern
+    let worktree_name = "worktrees/first";
+    let worktree_path = manager.create_worktree(worktree_name, None)?;
+
+    // Verify it was created in subdirectory
+    assert!(worktree_path.exists());
+    assert!(worktree_path.to_string_lossy().contains("worktrees"));
+
+    // Create second worktree with simple name
+    let second_path = manager.create_worktree("second", None)?;
+
+    // Should follow the same pattern
+    assert!(second_path.to_string_lossy().contains("worktrees"));
+
+    Ok(())
+}
+
+#[test]
+fn test_create_worktree_from_head_multiple_patterns() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_repo()?;
+
+    // Test various path patterns
+    let patterns = vec![
+        ("../sibling", "sibling at same level"),
+        ("worktrees/sub", "in subdirectory"),
+        ("nested/deep/worktree", "deeply nested"),
+    ];
+
+    for (pattern, description) in patterns {
+        let worktree_path = manager.create_worktree(pattern, None)?;
+        assert!(
+            worktree_path.exists(),
+            "Failed to create worktree: {}",
+            description
+        );
+
+        // Clean up for next iteration
+        let worktree_name = worktree_path.file_name().unwrap().to_str().unwrap();
+        manager.remove_worktree(worktree_name)?;
+    }
+
+    Ok(())
+}
+
+#[test]
 #[ignore = "Rename worktree has known issues with git worktree prune/add workflow"]
 fn test_rename_worktree() -> Result<()> {
     let (_temp_dir, manager) = setup_test_repo()?;
