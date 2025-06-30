@@ -23,7 +23,20 @@ fn setup_test_repo() -> Result<(TempDir, GitWorktreeManager)> {
     };
 
     let tree = repo.find_tree(tree_id)?;
-    repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])?;
+    let commit = repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])?;
+
+    // Ensure we have a main branch by creating it explicitly
+    let head = repo.head()?;
+    let branch_name = if head.shorthand() == Some("master") {
+        // Create main branch from master
+        repo.branch("main", &repo.find_commit(commit)?, false)?;
+        repo.set_head("refs/heads/main")?;
+        "main"
+    } else {
+        head.shorthand().unwrap_or("main")
+    };
+
+    eprintln!("Created test repo with default branch: {}", branch_name);
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
     Ok((parent_dir, manager))
@@ -104,11 +117,31 @@ fn test_stale_lock_removal() -> Result<()> {
 fn test_lock_with_new_branch() -> Result<()> {
     let (_temp_dir, manager) = setup_test_repo()?;
 
+    // Get the actual default branch name
+    let repo = manager.repo();
+    let head = repo.head()?;
+    let base_branch = head.shorthand().unwrap_or("main");
+
+    eprintln!("Using base branch: {}", base_branch);
+
     // Test that lock works with create_worktree_with_new_branch
     let result =
-        manager.create_worktree_with_new_branch("feature-worktree", "feature-branch", "main");
+        manager.create_worktree_with_new_branch("feature-worktree", "feature-branch", base_branch);
 
-    assert!(result.is_ok());
+    if let Err(ref e) = result {
+        eprintln!("Error in test_lock_with_new_branch: {}", e);
+        eprintln!("Error chain:");
+        let mut current_error = e.source();
+        while let Some(source) = current_error {
+            eprintln!("  Caused by: {}", source);
+            current_error = source.source();
+        }
+    }
+    assert!(
+        result.is_ok(),
+        "create_worktree_with_new_branch failed: {:?}",
+        result.err()
+    );
 
     Ok(())
 }
