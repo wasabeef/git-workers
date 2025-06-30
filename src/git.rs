@@ -35,7 +35,9 @@
 
 use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::constants::{
     DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE,
@@ -44,6 +46,64 @@ use crate::constants::{
 
 // Git-specific constants
 const COMMIT_ID_SHORT_LENGTH: usize = 8;
+
+// Lock file name used in .git directory
+const LOCK_FILE_NAME: &str = "git-workers-worktree.lock";
+
+// Maximum age for a lock file before it's considered stale (5 minutes)
+const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Simple lock structure for worktree operations
+struct WorktreeLock {
+    lock_path: PathBuf,
+    _file: Option<File>,
+}
+
+impl WorktreeLock {
+    /// Attempts to acquire a lock for worktree operations
+    fn acquire(git_dir: &Path) -> Result<Self> {
+        let lock_path = git_dir.join(LOCK_FILE_NAME);
+
+        // Check for stale lock
+        if lock_path.exists() {
+            if let Ok(metadata) = lock_path.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed > STALE_LOCK_TIMEOUT {
+                            // Remove stale lock
+                            let _ = fs::remove_file(&lock_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try to create lock file exclusively
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    anyhow!("Another git-workers process is currently creating a worktree. Please wait and try again.")
+                } else {
+                    anyhow!("Failed to create lock file: {}", e)
+                }
+            })?;
+
+        Ok(WorktreeLock {
+            lock_path,
+            _file: Some(file),
+        })
+    }
+}
+
+impl Drop for WorktreeLock {
+    fn drop(&mut self) {
+        // Clean up lock file when lock is released
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
 
 /// Finds the common parent directory of all worktrees
 ///
@@ -359,8 +419,15 @@ impl GitWorktreeManager {
     ///
     /// The canonicalized path to the newly created worktree
     ///
+    /// # Thread Safety
+    ///
+    /// This method uses file-based locking to prevent concurrent worktree creation
+    /// from multiple git-workers processes. A lock file is created in the `.git`
+    /// directory and automatically removed when the operation completes.
+    ///
     /// # Errors
     ///
+    /// * If another git-workers process is currently creating a worktree
     /// * If the worktree path already exists
     /// * If the branch name is invalid
     /// * If Git operations fail
@@ -381,6 +448,9 @@ impl GitWorktreeManager {
     /// let path = manager.create_worktree("../sibling", None).unwrap();
     /// ```
     pub fn create_worktree(&self, name: &str, branch: Option<&str>) -> Result<PathBuf> {
+        // Acquire lock to prevent concurrent worktree creation
+        let _lock = WorktreeLock::acquire(self.repo.path())?;
+
         let base_path = self.determine_worktree_base_path()?;
 
         // Handle different path patterns
@@ -462,9 +532,16 @@ impl GitWorktreeManager {
     ///
     /// The canonical path to the created worktree
     ///
+    /// # Thread Safety
+    ///
+    /// This method uses file-based locking to prevent concurrent worktree creation
+    /// from multiple git-workers processes. A lock file is created in the `.git`
+    /// directory and automatically removed when the operation completes.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
+    /// - Another git-workers process is currently creating a worktree
     /// - The worktree path already exists
     /// - The new branch name already exists
     /// - Git command execution fails
@@ -488,6 +565,9 @@ impl GitWorktreeManager {
         new_branch: &str,
         base_branch: &str,
     ) -> Result<PathBuf> {
+        // Acquire lock to prevent concurrent worktree creation
+        let _lock = WorktreeLock::acquire(self.repo.path())?;
+
         let base_path = self.determine_worktree_base_path()?;
 
         // Handle different path patterns (same as create_worktree)

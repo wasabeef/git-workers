@@ -17,7 +17,7 @@
 //! All interactive prompts support ESC key cancellation, allowing users
 //! to return to the main menu at any point during input.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use colored::*;
 use console::Term;
 use dialoguer::{Confirm, FuzzySelect, MultiSelect, Select};
@@ -471,6 +471,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         utils::print_error("Worktree name cannot be empty");
         return Ok(false);
     }
+
+    // Validate worktree name
+    let name = match validate_worktree_name(&name) {
+        Ok(validated_name) => validated_name,
+        Err(e) => {
+            utils::print_error(&format!("Invalid worktree name: {}", e));
+            return Ok(false);
+        }
+    };
 
     // If this is the first worktree, let user choose the pattern
     let final_name = if !has_worktrees {
@@ -1608,6 +1617,17 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
         return Ok(());
     }
 
+    // Validate new name
+    let new_name = match validate_worktree_name(&new_name) {
+        Ok(validated_name) => validated_name,
+        Err(e) => {
+            utils::print_error(&format!("Invalid worktree name: {}", e));
+            println!();
+            press_any_key_to_continue()?;
+            return Ok(());
+        }
+    };
+
     if new_name == worktree.name {
         utils::print_warning("New name is the same as the current name");
         return Ok(());
@@ -1716,6 +1736,115 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     press_any_key_to_continue()?;
 
     Ok(())
+}
+
+/// Validates a worktree name for safety and compatibility
+///
+/// This function ensures that worktree names are safe to use across different
+/// filesystems and don't conflict with Git internals. It performs several checks
+/// to prevent common issues that could arise from problematic names.
+///
+/// # Validation Rules
+///
+/// 1. **Empty names**: Names must not be empty or contain only whitespace
+/// 2. **Invalid characters**: The following characters are forbidden:
+///    - `/` `\` `:` `*` `?` `"` `<` `>` `|` `\0`
+/// 3. **Reserved names**: Names matching Git internal names are rejected (case-insensitive):
+///    - `.git`, `HEAD`, `refs`, `hooks`, `info`, `objects`, `logs`
+/// 4. **Hidden files**: Names starting with `.` are not allowed
+/// 5. **Non-ASCII characters**: Names containing non-ASCII characters trigger a warning
+///    and require user confirmation (interactive mode only)
+/// 6. **Length limit**: Names must not exceed 255 characters
+///
+/// # Arguments
+///
+/// * `name` - The proposed worktree name to validate
+///
+/// # Returns
+///
+/// * `Ok(String)` - The validated name (trimmed of leading/trailing whitespace)
+/// * `Err` - If the name is invalid and cannot be used
+///
+/// # Examples
+///
+/// ```
+/// use git_workers::commands::validate_worktree_name;
+///
+/// // Valid names
+/// assert!(validate_worktree_name("feature-123").is_ok());
+/// assert!(validate_worktree_name("my_branch").is_ok());
+///
+/// // Invalid names
+/// assert!(validate_worktree_name("").is_err());
+/// assert!(validate_worktree_name("feature/branch").is_err());
+/// assert!(validate_worktree_name("HEAD").is_err());
+/// ```
+pub fn validate_worktree_name(name: &str) -> Result<String> {
+    use colored::Colorize;
+
+    // Trim the name
+    let name = name.trim();
+
+    // Check for empty name
+    if name.is_empty() {
+        return Err(anyhow!("Worktree name cannot be empty"));
+    }
+
+    // Check for invalid filesystem characters
+    const INVALID_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
+    if name.chars().any(|c| INVALID_CHARS.contains(&c)) {
+        return Err(anyhow!(
+            "Worktree name contains invalid characters: {}",
+            INVALID_CHARS.iter().collect::<String>()
+        ));
+    }
+
+    // Check for names that could conflict with git internals (case insensitive)
+    const RESERVED_NAMES: &[&str] = &[".git", "HEAD", "refs", "hooks", "info", "objects", "logs"];
+    let name_lower = name.to_lowercase();
+    if RESERVED_NAMES
+        .iter()
+        .any(|&reserved| reserved.to_lowercase() == name_lower)
+    {
+        return Err(anyhow!("Worktree name '{}' is reserved by git", name));
+    }
+
+    // Check for names starting with dot (hidden files)
+    if name.starts_with('.') {
+        return Err(anyhow!("Worktree name cannot start with a dot (.)"));
+    }
+
+    // Check for non-ASCII characters (warning only)
+    if !name.is_ascii() {
+        println!();
+        println!(
+            "{} Worktree name contains non-ASCII characters.",
+            "Warning:".yellow().bold()
+        );
+        println!("  This may cause issues on some systems or with certain git operations.");
+        println!(
+            "  Consider using only ASCII characters (a-z, A-Z, 0-9, -, _) for better compatibility."
+        );
+        println!();
+
+        // Allow user to continue or cancel
+        let confirm = Confirm::with_theme(&get_theme())
+            .with_prompt("Continue with this name anyway?")
+            .default(false)
+            .interact_opt()?
+            .unwrap_or(false);
+
+        if !confirm {
+            return Err(anyhow!("Cancelled due to non-ASCII characters in name"));
+        }
+    }
+
+    // Check for extremely long names
+    if name.len() > 255 {
+        return Err(anyhow!("Worktree name is too long (max 255 characters)"));
+    }
+
+    Ok(name.to_string())
 }
 
 /// Finds the configuration file path using the same logic as Config::load()

@@ -15,8 +15,8 @@ use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
 ///
-/// This function handles the file copying logic with proper error handling
-/// and security checks to prevent directory traversal attacks.
+/// This function handles the file copying logic with proper error handling,
+/// size limits, and security checks to prevent directory traversal attacks.
 ///
 /// # Arguments
 ///
@@ -29,10 +29,18 @@ use crate::git::{GitWorktreeManager, WorktreeInfo};
 /// * `Ok(Vec<String>)` - List of successfully copied files
 /// * `Err(...)` - Error if critical failure occurs
 ///
+/// # File Size Limits
+///
+/// - Individual files larger than 100MB are automatically skipped with a warning
+/// - This prevents accidentally copying large binary files or build artifacts
+///
 /// # Security
 ///
 /// This function validates all paths to ensure they don't escape the
-/// repository boundaries using directory traversal techniques.
+/// repository boundaries using directory traversal techniques. Additionally:
+/// - Symlinks are detected and skipped to prevent security issues
+/// - Circular references are detected and prevented
+/// - Maximum directory depth is enforced to prevent infinite recursion
 pub fn copy_configured_files(
     config: &FilesConfig,
     destination_path: &Path,
@@ -73,6 +81,21 @@ pub fn copy_configured_files(
         }
 
         let source_path = source_dir.join(file_pattern);
+
+        // Check file size before copying
+        if source_path.exists() {
+            if let Ok(size) = calculate_path_size(&source_path) {
+                if size > MAX_FILE_SIZE && source_path.is_file() {
+                    println!(
+                        "  {} Skipping large file: {} ({:.1} MB)",
+                        "⚠️".yellow(),
+                        file_pattern.yellow(),
+                        size as f64 / 1024.0 / 1024.0
+                    );
+                    continue;
+                }
+            }
+        }
         let dest_path = destination_path.join(file_pattern);
 
         match copy_file_or_directory(&source_path, &dest_path) {
@@ -206,7 +229,7 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     let cwd = std::env::current_dir()?;
 
     // If we're in the main repository directory, use it
-    if cwd.join(".git").exists() && cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
+    if cwd.join(".git").exists() {
         return Ok(cwd);
     }
 
@@ -221,6 +244,64 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
 
 /// Maximum directory recursion depth to prevent infinite loops
 const MAX_DIRECTORY_DEPTH: usize = 50;
+
+/// Maximum file size for automatic copying (100MB)
+const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+
+/// Calculates the total size of a file or directory
+///
+/// For directories, this recursively calculates the size of all files within.
+///
+/// # Returns
+///
+/// * `Ok(u64)` - Total size in bytes
+/// * `Err` - If the path doesn't exist or can't be accessed
+fn calculate_path_size(path: &Path) -> Result<u64> {
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let metadata = path.symlink_metadata()?;
+
+    // Skip symlinks
+    if metadata.file_type().is_symlink() {
+        return Ok(0);
+    }
+
+    if metadata.is_file() {
+        Ok(metadata.len())
+    } else if metadata.is_dir() {
+        calculate_directory_size(path, 0)
+    } else {
+        Ok(0)
+    }
+}
+
+/// Recursively calculates the size of a directory
+fn calculate_directory_size(path: &Path, depth: usize) -> Result<u64> {
+    if depth >= MAX_DIRECTORY_DEPTH {
+        return Ok(0); // Stop at max depth
+    }
+
+    let mut total_size = 0;
+
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if let Ok(metadata) = entry.metadata() {
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                if let Ok(dir_size) = calculate_directory_size(&path, depth + 1) {
+                    total_size += dir_size;
+                }
+            }
+        }
+    }
+
+    Ok(total_size)
+}
 
 /// Validates that a path is safe to use (no directory traversal)
 ///
