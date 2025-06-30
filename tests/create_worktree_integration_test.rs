@@ -59,13 +59,20 @@ fn test_create_worktree_internal_with_first_pattern() -> Result<()> {
 
     // Verify it's at the same level as the repository
     // The worktree should be a sibling to the test-repo directory
-    let current_dir = std::env::current_dir()?.canonicalize()?;
+    let current_dir = std::env::current_dir()?;
     let repo_parent = current_dir.parent().unwrap();
 
     // Both should have the same parent directory
+    // Use canonicalize to resolve any symlinks for comparison
+    let worktree_parent = worktree_path
+        .canonicalize()?
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let expected_parent = repo_parent.canonicalize()?;
+
     assert_eq!(
-        worktree_path.canonicalize()?.parent().unwrap(),
-        repo_parent,
+        worktree_parent, expected_parent,
         "Worktree should be at the same level as the repository"
     );
 

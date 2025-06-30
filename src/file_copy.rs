@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::FilesConfig;
-use crate::constants::WORKTREES_SUBDIR;
+use crate::constants::{MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WORKTREES_SUBDIR};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
@@ -232,11 +232,8 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     Ok(repo_workdir.to_path_buf())
 }
 
-/// Maximum directory recursion depth to prevent infinite loops
-const MAX_DIRECTORY_DEPTH: usize = 50;
-
-/// Maximum file size for automatic copying (100MB)
-const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+/// Maximum file size for automatic copying in bytes
+const MAX_FILE_SIZE: u64 = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /// Calculates the total size of a file or directory
 ///

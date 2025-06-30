@@ -1,5 +1,6 @@
 use anyhow::Result;
 use git_workers::commands;
+use git_workers::constants::MAX_WORKTREE_NAME_LENGTH;
 
 #[test]
 fn test_validate_worktree_name_with_ascii() -> Result<()> {
@@ -59,11 +60,11 @@ fn test_validate_worktree_name_reserved() -> Result<()> {
 #[test]
 fn test_validate_worktree_name_length() -> Result<()> {
     // Very long names should fail
-    let long_name = "a".repeat(256);
+    let long_name = "a".repeat(MAX_WORKTREE_NAME_LENGTH + 1);
     assert!(commands::validate_worktree_name(&long_name).is_err());
 
-    // Max length (255) should pass
-    let max_name = "a".repeat(255);
+    // Max length should pass
+    let max_name = "a".repeat(MAX_WORKTREE_NAME_LENGTH);
     assert_eq!(commands::validate_worktree_name(&max_name)?, max_name);
 
     Ok(())

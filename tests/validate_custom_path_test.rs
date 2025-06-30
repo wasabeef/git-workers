@@ -1,5 +1,6 @@
 use anyhow::Result;
 use git_workers::commands::validate_custom_path;
+use git_workers::constants::GIT_RESERVED_NAMES;
 
 #[test]
 fn test_validate_custom_path_valid_paths() -> Result<()> {
@@ -133,9 +134,7 @@ fn test_validate_custom_path_path_traversal() -> Result<()> {
 
 #[test]
 fn test_validate_custom_path_reserved_names() -> Result<()> {
-    let reserved_names = vec![".git", "HEAD", "refs", "hooks", "info", "objects", "logs"];
-
-    for name in reserved_names {
+    for name in GIT_RESERVED_NAMES {
         // Test reserved name as path component
         let path = format!("test/{}/worktree", name);
         let result = validate_custom_path(&path);
@@ -162,6 +161,33 @@ fn test_validate_custom_path_edge_cases() -> Result<()> {
 
     // Test path that goes up then down (should be valid)
     assert!(validate_custom_path("../sibling/worktrees/feature").is_ok());
+
+    // Test .git directory - allowed for custom subdirectories but not Git's reserved ones
+    assert!(validate_custom_path(".git/my-custom-worktrees/feature").is_ok());
+    assert!(validate_custom_path(".git/feature-branches/test").is_ok());
+
+    // But critical Git directories should still be protected
+    let result = validate_custom_path(".git/objects/test");
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("critical Git metadata"));
+
+    let result = validate_custom_path(".git/refs/worktree");
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("critical Git metadata"));
+
+    // Test that .git/worktrees is protected
+    let result = validate_custom_path(".git/worktrees/test");
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("critical Git metadata"));
 
     Ok(())
 }

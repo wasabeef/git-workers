@@ -40,18 +40,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::constants::{
-    DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE,
-    GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX, TIME_FORMAT,
+    COMMIT_ID_SHORT_LENGTH, DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED,
+    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX,
+    LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT,
 };
 
-// Git-specific constants
-const COMMIT_ID_SHORT_LENGTH: usize = 8;
-
-// Lock file name used in .git directory
-const LOCK_FILE_NAME: &str = "git-workers-worktree.lock";
-
-// Maximum age for a lock file before it's considered stale (5 minutes)
-const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(300);
+// Create Duration from constant for stale lock timeout
+const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(STALE_LOCK_TIMEOUT_SECS);
 
 /// Simple lock structure for worktree operations
 struct WorktreeLock {

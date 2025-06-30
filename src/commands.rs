@@ -26,7 +26,10 @@ use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::Config;
-use crate::constants::{section_header, CONFIG_FILE_NAME, GIT_REMOTE_PREFIX, WORKTREES_SUBDIR};
+use crate::constants::{
+    section_header, CONFIG_FILE_NAME, GIT_CRITICAL_DIRS, GIT_REMOTE_PREFIX, GIT_RESERVED_NAMES,
+    INVALID_FILESYSTEM_CHARS, MAX_WORKTREE_NAME_LENGTH, WINDOWS_RESERVED_CHARS, WORKTREES_SUBDIR,
+};
 use crate::file_copy;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 use crate::hooks::{self, HookContext};
@@ -1847,20 +1850,19 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
     }
 
     // Check for invalid filesystem characters
-    const INVALID_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
-    if name.chars().any(|c| INVALID_CHARS.contains(&c)) {
+    if name.chars().any(|c| INVALID_FILESYSTEM_CHARS.contains(&c)) {
         return Err(anyhow!(
             "Worktree name contains invalid characters: {}",
-            INVALID_CHARS.iter().collect::<String>()
+            INVALID_FILESYSTEM_CHARS.iter().collect::<String>()
         ));
     }
 
     // Check for names that could conflict with git internals (case insensitive)
-    const RESERVED_NAMES: &[&str] = &[".git", "HEAD", "refs", "hooks", "info", "objects", "logs"];
     let name_lower = name.to_lowercase();
-    if RESERVED_NAMES
-        .iter()
-        .any(|&reserved| reserved.to_lowercase() == name_lower)
+    if name_lower == ".git"
+        || GIT_RESERVED_NAMES
+            .iter()
+            .any(|&reserved| reserved.to_lowercase() == name_lower)
     {
         return Err(anyhow!("Worktree name '{name}' is reserved by git"));
     }
@@ -1896,8 +1898,10 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
     }
 
     // Check for extremely long names
-    if name.len() > 255 {
-        return Err(anyhow!("Worktree name is too long (max 255 characters)"));
+    if name.len() > MAX_WORKTREE_NAME_LENGTH {
+        return Err(anyhow!(
+            "Worktree name is too long (max {MAX_WORKTREE_NAME_LENGTH} characters)"
+        ));
     }
 
     Ok(name.to_string())
@@ -1981,11 +1985,10 @@ pub fn validate_custom_path(path: &str) -> Result<()> {
     }
 
     // Check for Windows reserved characters (for cross-platform compatibility)
-    const RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
-    if path.chars().any(|c| RESERVED_CHARS.contains(&c)) {
+    if path.chars().any(|c| WINDOWS_RESERVED_CHARS.contains(&c)) {
         return Err(anyhow!(
             "Custom path contains reserved characters: {}",
-            RESERVED_CHARS.iter().collect::<String>()
+            WINDOWS_RESERVED_CHARS.iter().collect::<String>()
         ));
     }
 
@@ -2015,14 +2018,33 @@ pub fn validate_custom_path(path: &str) -> Result<()> {
 
                 // Check for reserved names in path components
                 if let Some(name_str) = name.to_str() {
-                    const RESERVED_NAMES: &[&str] =
-                        &[".git", "HEAD", "refs", "hooks", "info", "objects", "logs"];
                     let name_lower = name_str.to_lowercase();
-                    if RESERVED_NAMES
+                    if GIT_RESERVED_NAMES
                         .iter()
                         .any(|&reserved| reserved.to_lowercase() == name_lower)
                     {
                         return Err(anyhow!("Path component '{name_str}' is reserved by git"));
+                    }
+
+                    // Special check for .git paths - only prevent critical Git metadata directories
+                    if name_str == ".git" {
+                        let components: Vec<_> = path_obj.components().collect();
+                        if components.len() > 1 {
+                            // Check if trying to create in critical Git directories
+                            if let Some(std::path::Component::Normal(next)) = components.get(1) {
+                                if let Some(next_str) = next.to_str() {
+                                    // These directories contain critical Git metadata and should not be used for worktrees
+                                    if GIT_CRITICAL_DIRS.contains(&next_str) {
+                                        return Err(anyhow!(
+                                            "Cannot create worktree in .git/{} directory. \
+                                            This directory contains critical Git metadata.",
+                                            next_str
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        // Allow other .git subdirectories (like .git/worktrees-custom, etc.)
                     }
                 }
             }
