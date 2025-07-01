@@ -2,7 +2,7 @@
 //!
 //! This module provides the core Git operations for managing worktrees,
 //! including creation, deletion, listing, and renaming. It handles both
-//! regular and bare repositories.
+//! regular and bare repositories with proper path resolution.
 //!
 //! # Features
 //!
@@ -12,6 +12,7 @@
 //! - **Worktree Renaming**: Complete rename including directory, metadata, and optional branch
 //! - **Pattern Detection**: Automatically detect and follow worktree organization patterns
 //! - **Bare Repository Support**: Special handling for bare repositories
+//! - **Path Resolution**: Proper handling of relative and absolute paths for worktree creation
 //!
 //! # Examples
 //!
@@ -34,15 +35,70 @@
 
 use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::constants::{
-    DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE,
-    GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX, TIME_FORMAT,
+    COMMIT_ID_SHORT_LENGTH, DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED,
+    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX,
+    LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT,
 };
 
-// Git-specific constants
-const COMMIT_ID_SHORT_LENGTH: usize = 8;
+// Create Duration from constant for stale lock timeout
+const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(STALE_LOCK_TIMEOUT_SECS);
+
+/// Simple lock structure for worktree operations
+struct WorktreeLock {
+    lock_path: PathBuf,
+    _file: Option<File>,
+}
+
+impl WorktreeLock {
+    /// Attempts to acquire a lock for worktree operations
+    fn acquire(git_dir: &Path) -> Result<Self> {
+        let lock_path = git_dir.join(LOCK_FILE_NAME);
+
+        // Check for stale lock
+        if lock_path.exists() {
+            if let Ok(metadata) = lock_path.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed > STALE_LOCK_TIMEOUT {
+                            // Remove stale lock
+                            let _ = fs::remove_file(&lock_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try to create lock file exclusively
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    anyhow!("Another git-workers process is currently creating a worktree. Please wait and try again.")
+                } else {
+                    anyhow!("Failed to create lock file: {e}")
+                }
+            })?;
+
+        Ok(WorktreeLock {
+            lock_path,
+            _file: Some(file),
+        })
+    }
+}
+
+impl Drop for WorktreeLock {
+    fn drop(&mut self) {
+        // Clean up lock file when lock is released
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
 
 /// Finds the common parent directory of all worktrees
 ///
@@ -358,8 +414,15 @@ impl GitWorktreeManager {
     ///
     /// The canonicalized path to the newly created worktree
     ///
+    /// # Thread Safety
+    ///
+    /// This method uses file-based locking to prevent concurrent worktree creation
+    /// from multiple git-workers processes. A lock file is created in the `.git`
+    /// directory and automatically removed when the operation completes.
+    ///
     /// # Errors
     ///
+    /// * If another git-workers process is currently creating a worktree
     /// * If the worktree path already exists
     /// * If the branch name is invalid
     /// * If Git operations fail
@@ -380,6 +443,9 @@ impl GitWorktreeManager {
     /// let path = manager.create_worktree("../sibling", None).unwrap();
     /// ```
     pub fn create_worktree(&self, name: &str, branch: Option<&str>) -> Result<PathBuf> {
+        // Acquire lock to prevent concurrent worktree creation
+        let _lock = WorktreeLock::acquire(self.repo.path())?;
+
         let base_path = self.determine_worktree_base_path()?;
 
         // Handle different path patterns
@@ -461,9 +527,16 @@ impl GitWorktreeManager {
     ///
     /// The canonical path to the created worktree
     ///
+    /// # Thread Safety
+    ///
+    /// This method uses file-based locking to prevent concurrent worktree creation
+    /// from multiple git-workers processes. A lock file is created in the `.git`
+    /// directory and automatically removed when the operation completes.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
+    /// - Another git-workers process is currently creating a worktree
     /// - The worktree path already exists
     /// - The new branch name already exists
     /// - Git command execution fails
@@ -487,6 +560,9 @@ impl GitWorktreeManager {
         new_branch: &str,
         base_branch: &str,
     ) -> Result<PathBuf> {
+        // Acquire lock to prevent concurrent worktree creation
+        let _lock = WorktreeLock::acquire(self.repo.path())?;
+
         let base_path = self.determine_worktree_base_path()?;
 
         // Handle different path patterns (same as create_worktree)
@@ -760,25 +836,49 @@ impl GitWorktreeManager {
 
     /// Creates a worktree from the current HEAD
     ///
+    /// This method creates a new worktree from the current HEAD commit, automatically
+    /// creating a new branch named after the worktree. It handles path resolution
+    /// to ensure consistent behavior across different working directories.
+    ///
     /// # Arguments
     ///
-    /// * `path` - The filesystem path for the new worktree
-    /// * `name` - The name for the worktree (used by git2 API)
+    /// * `path` - The filesystem path for the new worktree (can be relative or absolute)
+    /// * `name` - The name for the worktree (currently unused, kept for API compatibility)
+    ///
+    /// # Path Resolution
+    ///
+    /// - Relative paths are resolved from the current working directory
+    /// - Absolute paths are used as-is
+    /// - This ensures that paths like `../worktree` work correctly regardless of
+    ///   whether the command is run from the repository root or a subdirectory
     ///
     /// # Implementation Notes
     ///
-    /// - For bare repositories: Uses git CLI command
-    /// - For normal repositories: Uses git2 API
+    /// - Uses git CLI command for both bare and non-bare repositories
+    /// - Automatically creates a new branch with the worktree name
+    /// - The git command is executed from the repository's git directory
     ///
     /// # Returns
     ///
-    /// The path to the created worktree
+    /// The canonicalized absolute path to the created worktree
     ///
     /// # Errors
     ///
-    /// Returns an error if worktree creation fails
+    /// Returns an error if:
+    /// - The current directory cannot be determined
+    /// - The git command fails (e.g., path already exists, no commits)
+    /// - Path canonicalization fails after creation
     fn create_worktree_from_head(&self, path: &Path, _name: &str) -> Result<PathBuf> {
         use std::process::Command;
+
+        // Convert to absolute path to ensure consistent interpretation by git command
+        // This prevents issues when path is relative and current_dir is different
+        let absolute_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            // Resolve relative path from current working directory, not from get_git_dir()
+            std::env::current_dir()?.join(path)
+        };
 
         // For both bare and non-bare repositories, use git command without specifying HEAD
         // This will create a new branch with the worktree name automatically
@@ -786,7 +886,7 @@ impl GitWorktreeManager {
             .current_dir(self.get_git_dir()?)
             .arg("worktree")
             .arg("add")
-            .arg(path)
+            .arg(&absolute_path)
             .output()?;
 
         if !output.status.success() {
@@ -796,8 +896,8 @@ impl GitWorktreeManager {
             ));
         }
 
-        // Return the canonicalized path
-        path.canonicalize().or_else(|_| Ok(path.to_path_buf()))
+        // Return the canonicalized path, or the absolute path if canonicalization fails
+        absolute_path.canonicalize().or_else(|_| Ok(absolute_path))
     }
 
     /// Removes a worktree by name
@@ -910,7 +1010,7 @@ impl GitWorktreeManager {
                 branch.delete()?;
                 Ok(())
             }
-            Err(_) => Err(anyhow!("Branch '{}' not found", branch_name)),
+            Err(_) => Err(anyhow!("Branch '{branch_name}' not found")),
         }
     }
 
@@ -983,7 +1083,8 @@ impl GitWorktreeManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Failed to rename branch: {}", stderr.trim()));
+            let error_msg = stderr.trim();
+            return Err(anyhow!("Failed to rename branch: {error_msg}"));
         }
 
         Ok(())
@@ -1157,14 +1258,16 @@ impl GitWorktreeManager {
             // Update the gitdir file
             let gitdir_file = new_worktree_git_dir.join("gitdir");
             if gitdir_file.exists() {
-                fs::write(&gitdir_file, format!("{}/.git\n", new_path.display()))?;
+                let new_path_str = new_path.display();
+                fs::write(&gitdir_file, format!("{new_path_str}/.git\n"))?;
             }
         }
 
         // Step 3: Update the .git file in the worktree
         let git_file_path = new_path.join(".git");
         if git_file_path.exists() {
-            let git_file_content = format!("gitdir: {}\n", new_worktree_git_dir.display());
+            let git_dir_str = new_worktree_git_dir.display();
+            let git_file_content = format!("gitdir: {git_dir_str}\n");
             fs::write(&git_file_path, git_file_content)?;
         }
 
@@ -1217,8 +1320,8 @@ impl GitWorktreeManager {
         let branch_name = head.shorthand().ok_or_else(|| anyhow!("No branch name"))?;
 
         // Try to find upstream branch
-        let upstream_name = format!("origin/{}", branch_name);
-        if let Ok(upstream) = repo.find_reference(&format!("refs/remotes/{}", upstream_name)) {
+        let upstream_name = format!("origin/{branch_name}");
+        if let Ok(upstream) = repo.find_reference(&format!("refs/remotes/{upstream_name}")) {
             let upstream_oid = upstream.target().ok_or_else(|| anyhow!("No target"))?;
             let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
             Ok((ahead, behind))

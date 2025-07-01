@@ -4,18 +4,18 @@ use std::process::{Command, Stdio};
 #[test]
 #[ignore = "Interactive test - requires terminal and is time-consuming"]
 fn test_esc_key_handling() {
-    // テスト用のgitリポジトリを作成
+    // Create a git repository for testing
     let temp_dir = tempfile::tempdir().unwrap();
     let repo_path = temp_dir.path();
 
-    // gitリポジトリを初期化
+    // Initialize git repository
     Command::new("git")
         .args(["init"])
         .current_dir(repo_path)
         .output()
         .expect("Failed to init git repo");
 
-    // 初期コミットを作成
+    // Create initial commit
     std::fs::write(repo_path.join("README.md"), "# Test").unwrap();
     Command::new("git")
         .args(["add", "."])
@@ -29,10 +29,10 @@ fn test_esc_key_handling() {
         .output()
         .expect("Failed to commit");
 
-    // バイナリのパスを取得
+    // Get binary path
     let binary_path = std::env::current_dir().unwrap().join("target/debug/gw");
 
-    // プロセスを起動
+    // Start process
     let mut child = Command::new(&binary_path)
         .current_dir(repo_path)
         .stdin(Stdio::piped())
@@ -43,13 +43,13 @@ fn test_esc_key_handling() {
 
     let stdin = child.stdin.as_mut().expect("Failed to get stdin");
 
-    // 1. Create worktreeを選択 (4番目の項目)
+    // 1. Select Create worktree (4th item)
     stdin.write_all(b"\x1b[B\x1b[B\x1b[B\r").unwrap(); // 下矢印3回 + Enter
 
-    // 2. ESCキーを送信してキャンセル
+    // 2. Send ESC key to cancel
     stdin.write_all(b"\x1b").unwrap(); // ESC
 
-    // 3. Exitを選択
+    // 3. Select Exit
     stdin
         .write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
         .unwrap(); // 下矢印5回 + Enter
@@ -67,7 +67,7 @@ fn test_esc_key_handling() {
     println!("STDOUT:\n{}", stdout);
     println!("STDERR:\n{}", stderr);
 
-    // ESCキーでキャンセルされたことを確認
+    // Confirm that it was cancelled with ESC key
     assert!(stdout.contains("Operation cancelled") || stderr.contains("Operation cancelled"));
 }
 
@@ -77,7 +77,7 @@ fn test_search_esc_handling() {
     let temp_dir = tempfile::tempdir().unwrap();
     let repo_path = temp_dir.path();
 
-    // gitリポジトリを初期化
+    // Initialize git repository
     Command::new("git")
         .args(["init"])
         .current_dir(repo_path)
@@ -109,13 +109,13 @@ fn test_search_esc_handling() {
 
     let stdin = child.stdin.as_mut().expect("Failed to get stdin");
 
-    // 1. Search worktreesを選択 (3番目の項目)
+    // 1. Select Search worktrees (3rd item)
     stdin.write_all(b"\x1b[B\x1b[B\r").unwrap(); // 下矢印2回 + Enter
 
-    // 2. ESCキーを送信してキャンセル
+    // 2. Send ESC key to cancel
     stdin.write_all(b"\x1b").unwrap(); // ESC
 
-    // 3. Exitを選択
+    // 3. Select Exit
     stdin
         .write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
         .unwrap(); // 下矢印6回 + Enter
@@ -133,6 +133,6 @@ fn test_search_esc_handling() {
     println!("STDOUT:\n{}", stdout);
     println!("STDERR:\n{}", stderr);
 
-    // ESCキーでキャンセルされたことを確認
+    // Confirm that it was cancelled with ESC key
     assert!(stdout.contains("Search cancelled") || stderr.contains("Search cancelled"));
 }

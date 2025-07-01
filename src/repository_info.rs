@@ -72,7 +72,7 @@ pub fn get_repository_info() -> String {
                         .and_then(|p| p.file_name())
                         .and_then(|name| name.to_str())
                     {
-                        return format!("{} ({})", parent_name, worktree_name);
+                        return format!("{parent_name} ({worktree_name})");
                     }
                 }
             } else if repo
@@ -84,7 +84,7 @@ pub fn get_repository_info() -> String {
                 // The presence of a "worktrees" directory indicates this is a main repo
                 if let Some(repo_path) = repo.workdir() {
                     if let Some(repo_name) = repo_path.file_name().and_then(|name| name.to_str()) {
-                        return format!("{} (main)", repo_name);
+                        return format!("{repo_name} (main)");
                     }
                 }
             }

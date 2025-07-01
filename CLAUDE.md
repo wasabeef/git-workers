@@ -81,12 +81,26 @@ source /path/to/git-workers/shell/gw.sh
 - Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
 - Smart mode automatically handles branch conflicts and offers appropriate actions
 
+### Custom Path Support
+
+- Added third option for first worktree creation: "Custom path (specify relative to project root)"
+- Allows users to specify arbitrary relative paths for worktree creation
+- Comprehensive path validation with security checks:
+  - Prevents absolute paths
+  - Validates against filesystem-incompatible characters
+  - Blocks git reserved names in path components
+  - Prevents excessive path traversal (max one level above project root)
+  - Cross-platform compatibility checks
+
 ### Key Methods Added/Modified
 
 - **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
 - **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
 - **`copy_configured_files()`**: Copies files specified in config to new worktrees
+- **`create_worktree_from_head()`**: Fixed path resolution for non-bare repositories (converts relative paths to absolute)
+- **`validate_custom_path()`**: Validates custom paths for security and compatibility
+- **`create_worktree_internal()`**: Enhanced with custom path input option
 
 ## Architecture
 
@@ -176,11 +190,35 @@ Since Git lacks native rename functionality:
 
 ### Testing Considerations
 
-- Integration tests in `tests/` directory (27 test files)
+- Integration tests in `tests/` directory (30 test files)
 - Some tests are flaky in parallel execution (marked with `#[ignore]`)
 - CI sets `CI=true` environment variable to skip flaky tests
 - Run with `--test-threads=1` for reliable results
 - Use `--nocapture` to see test output for debugging
+- New test files added:
+  - `worktree_path_test.rs`: Tests for path resolution and edge cases
+  - `create_worktree_integration_test.rs`: Integration tests for worktree creation
+
+### String Formatting
+
+- **ALWAYS use inline variable syntax in format! macros**: `format!("{variable}")` instead of `format!("{}", variable)`
+- This applies to ALL format-like macros: `format!`, `println!`, `eprintln!`, `log::info!`, `log::warn!`, `log::error!`, etc.
+- Examples:
+
+  ```rust
+  // ✅ Correct
+  format!("Device {name} created successfully")
+  println!("Found {count} devices")
+  log::info!("Starting device {identifier}")
+
+  // ❌ Incorrect
+  format!("Device {} created successfully", name)
+  println!("Found {} devices", count)
+  log::info!("Starting device {}", identifier)
+  ```
+
+- This rule is enforced by `clippy::uninlined_format_args` which treats violations as errors in CI
+- Apply this consistently across ALL files including main source, tests, examples, and binary targets
 
 ### Important Constraints
 
@@ -233,3 +271,64 @@ copy = [".env", ".env.local", "config/local.json"]
    - Symlink detection with warnings
    - Maximum directory depth limit (50 levels)
    - Preserves file permissions
+
+## Bug Fixes
+
+### v0.3.0 Worktree Creation Path Resolution
+
+Fixed an issue where creating worktrees from HEAD in non-bare repositories could fail when using relative paths like `../worktree-name`. The fix ensures that relative paths are resolved from the current working directory rather than from the git directory.
+
+**Root Cause**: The `git worktree add` command was being executed with `current_dir` set to the git directory, causing relative paths to be interpreted incorrectly.
+
+### v0.3.0 Security and Robustness Improvements
+
+#### Worktree Name Validation
+
+Added comprehensive validation for worktree names to prevent issues:
+
+- **Invalid Characters**: Rejects filesystem-incompatible characters (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`, `\0`)
+- **Reserved Names**: Prevents conflicts with Git internals (`.git`, `HEAD`, `refs`, etc.)
+- **Non-ASCII Warning**: Warns users about potential compatibility issues with non-ASCII characters
+- **Length Limits**: Enforces 255-character maximum for filesystem compatibility
+- **Hidden Files**: Prevents names starting with `.` to avoid hidden file conflicts
+
+#### File Copy Size Limits
+
+Enhanced file copy functionality with safety checks:
+
+- **Large File Skipping**: Automatically skips files larger than 100MB with warnings
+- **Performance Protection**: Prevents accidental copying of build artifacts or large binaries
+- **User Feedback**: Clear warnings when files are skipped due to size
+
+#### Concurrent Access Control
+
+Implemented file-based locking to prevent race conditions:
+
+- **Process Locking**: Uses `.git/git-workers-worktree.lock` to prevent concurrent worktree creation
+- **Stale Lock Cleanup**: Automatically removes locks older than 5 minutes
+- **Error Messages**: Clear feedback when another process is creating worktrees
+- **Automatic Cleanup**: Lock files are automatically removed when operations complete
+
+#### Custom Path Validation
+
+Added comprehensive validation for user-specified worktree paths:
+
+- **Path Security**: Validates against path traversal attacks and excessive directory navigation
+- **Cross-Platform Compatibility**: Checks for Windows reserved characters even on non-Windows systems
+- **Git Reserved Names**: Prevents conflicts with git internal directories in path components
+- **Path Format Validation**: Ensures proper relative path format (no absolute paths, no trailing slashes)
+
+**Solution**: Convert relative paths to absolute paths before passing them to the git command, ensuring consistent behavior regardless of the working directory.
+
+## Test Coverage
+
+The following test files have been added/updated for v0.3.0:
+
+- `tests/worktree_path_test.rs`: 10 tests for path resolution edge cases
+- `tests/create_worktree_integration_test.rs`: 5 integration tests including bare repository scenarios
+- `tests/worktree_commands_test.rs`: 3 new tests for HEAD creation patterns
+- `tests/validate_worktree_name_test.rs`: 7 tests for name validation including edge cases
+- `tests/file_copy_size_test.rs`: 6 tests for file size limits and copying behavior
+- `tests/worktree_lock_test.rs`: 5 tests for concurrent access control
+- `tests/validate_custom_path_test.rs`: 9 tests for custom path validation including security checks
+- Enhanced `tests/create_worktree_integration_test.rs`: 2 additional tests for custom path creation

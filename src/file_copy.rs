@@ -10,13 +10,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::FilesConfig;
-use crate::constants::WORKTREES_SUBDIR;
+use crate::constants::{MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WORKTREES_SUBDIR};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
 ///
-/// This function handles the file copying logic with proper error handling
-/// and security checks to prevent directory traversal attacks.
+/// This function handles the file copying logic with proper error handling,
+/// size limits, and security checks to prevent directory traversal attacks.
 ///
 /// # Arguments
 ///
@@ -29,10 +29,18 @@ use crate::git::{GitWorktreeManager, WorktreeInfo};
 /// * `Ok(Vec<String>)` - List of successfully copied files
 /// * `Err(...)` - Error if critical failure occurs
 ///
+/// # File Size Limits
+///
+/// - Individual files larger than 100MB are automatically skipped with a warning
+/// - This prevents accidentally copying large binary files or build artifacts
+///
 /// # Security
 ///
 /// This function validates all paths to ensure they don't escape the
-/// repository boundaries using directory traversal techniques.
+/// repository boundaries using directory traversal techniques. Additionally:
+/// - Symlinks are detected and skipped to prevent security issues
+/// - Circular references are detected and prevented
+/// - Maximum directory depth is enforced to prevent infinite recursion
 pub fn copy_configured_files(
     config: &FilesConfig,
     destination_path: &Path,
@@ -60,31 +68,40 @@ pub fn copy_configured_files(
 
     let mut copied_files = Vec::new();
 
-    println!("\n{}", "📄 Copying configured files...".bright_cyan());
+    let msg = "📄 Copying configured files...".bright_cyan();
+    println!("\n{msg}");
 
     for file_pattern in &config.copy {
         if !is_safe_path(file_pattern) {
-            println!(
-                "  {} Skipping unsafe path: {}",
-                "⚠️".yellow(),
-                file_pattern.yellow()
-            );
+            let warning = "⚠️".yellow();
+            let pattern = file_pattern.yellow();
+            println!("  {warning} Skipping unsafe path: {pattern}");
             continue;
         }
 
         let source_path = source_dir.join(file_pattern);
+
+        // Check file size before copying
+        if source_path.exists() {
+            if let Ok(size) = calculate_path_size(&source_path) {
+                if size > MAX_FILE_SIZE && source_path.is_file() {
+                    let warning = "⚠️".yellow();
+                    let pattern = file_pattern.yellow();
+                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                    println!("  {warning} Skipping large file: {pattern} ({size_mb:.1} MB)");
+                    continue;
+                }
+            }
+        }
         let dest_path = destination_path.join(file_pattern);
 
         match copy_file_or_directory(&source_path, &dest_path) {
             Ok(count) => {
                 if count > 0 {
-                    println!(
-                        "  {} Copied: {} ({} file{})",
-                        "✓".green(),
-                        file_pattern.green(),
-                        count,
-                        if count == 1 { "" } else { "s" }
-                    );
+                    let checkmark = "✓".green();
+                    let pattern = file_pattern.green();
+                    let plural = if count == 1 { "" } else { "s" };
+                    println!("  {checkmark} Copied: {pattern} ({count} file{plural})");
                     copied_files.push(file_pattern.clone());
                 }
             }
@@ -93,25 +110,21 @@ pub fn copy_configured_files(
                 if e.to_string().contains("No such file or directory")
                     || e.to_string().contains("not found")
                 {
-                    println!(
-                        "  {} Not found: {} (skipping)",
-                        "⚠️".yellow(),
-                        file_pattern.yellow()
-                    );
+                    let warning = "⚠️".yellow();
+                    let pattern = file_pattern.yellow();
+                    println!("  {warning} Not found: {pattern} (skipping)");
                 } else {
-                    println!(
-                        "  {} Failed to copy {}: {}",
-                        "✗".red(),
-                        file_pattern.red(),
-                        e
-                    );
+                    let cross = "✗".red();
+                    let pattern = file_pattern.red();
+                    println!("  {cross} Failed to copy {pattern}: {e}");
                 }
             }
         }
     }
 
     if copied_files.is_empty() {
-        println!("  {} No files were copied", "ℹ️".blue());
+        let info = "ℹ️".blue();
+        println!("  {info} No files were copied");
     }
 
     Ok(copied_files)
@@ -206,7 +219,7 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     let cwd = std::env::current_dir()?;
 
     // If we're in the main repository directory, use it
-    if cwd.join(".git").exists() && cwd.join(crate::constants::CONFIG_FILE_NAME).exists() {
+    if cwd.join(".git").exists() {
         return Ok(cwd);
     }
 
@@ -219,8 +232,63 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     Ok(repo_workdir.to_path_buf())
 }
 
-/// Maximum directory recursion depth to prevent infinite loops
-const MAX_DIRECTORY_DEPTH: usize = 50;
+/// Maximum file size for automatic copying in bytes
+const MAX_FILE_SIZE: u64 = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+/// Calculates the total size of a file or directory
+///
+/// For directories, this recursively calculates the size of all files within.
+///
+/// # Returns
+///
+/// * `Ok(u64)` - Total size in bytes
+/// * `Err` - If the path doesn't exist or can't be accessed
+fn calculate_path_size(path: &Path) -> Result<u64> {
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let metadata = path.symlink_metadata()?;
+
+    // Skip symlinks
+    if metadata.file_type().is_symlink() {
+        return Ok(0);
+    }
+
+    if metadata.is_file() {
+        Ok(metadata.len())
+    } else if metadata.is_dir() {
+        calculate_directory_size(path, 0)
+    } else {
+        Ok(0)
+    }
+}
+
+/// Recursively calculates the size of a directory
+fn calculate_directory_size(path: &Path, depth: usize) -> Result<u64> {
+    if depth >= MAX_DIRECTORY_DEPTH {
+        return Ok(0); // Stop at max depth
+    }
+
+    let mut total_size = 0;
+
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if let Ok(metadata) = entry.metadata() {
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                if let Ok(dir_size) = calculate_directory_size(&path, depth + 1) {
+                    total_size += dir_size;
+                }
+            }
+        }
+    }
+
+    Ok(total_size)
+}
 
 /// Validates that a path is safe to use (no directory traversal)
 ///
@@ -264,12 +332,15 @@ fn is_safe_path(path: &str) -> bool {
 /// Returns the number of files copied
 fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     if !source.exists() {
-        return Err(anyhow!("Source path not found: {}", source.display()));
+        let source_path = source.display();
+        return Err(anyhow!("Source path not found: {source_path}"));
     }
 
     // Symlink detection with warning
     if source.symlink_metadata()?.file_type().is_symlink() {
-        println!("  {} Skipping symlink: {}", "⚠️".yellow(), source.display());
+        let warning = "⚠️".yellow();
+        let source_path = source.display();
+        println!("  {warning} Skipping symlink: {source_path}");
         return Ok(0);
     }
 
@@ -277,7 +348,10 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
         // Create parent directory if needed
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create parent directory: {}", parent.display())
+                format!(
+                    "Failed to create parent directory: {parent_display}",
+                    parent_display = parent.display()
+                )
             })?;
         }
 
@@ -313,8 +387,12 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
         ));
     }
 
-    fs::create_dir_all(dest)
-        .with_context(|| format!("Failed to create directory: {}", dest.display()))?;
+    fs::create_dir_all(dest).with_context(|| {
+        format!(
+            "Failed to create directory: {dest_display}",
+            dest_display = dest.display()
+        )
+    })?;
 
     let mut total_files = 0;
 

@@ -459,7 +459,7 @@ impl Config {
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Warning: Failed to read {}: {}", CONFIG_FILE_NAME, e);
+                eprintln!("Warning: Failed to read {CONFIG_FILE_NAME}: {e}");
                 return Ok(None);
             }
         };
@@ -467,7 +467,7 @@ impl Config {
         let config = match toml::from_str::<Config>(&content) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Warning: Failed to parse {}: {}", CONFIG_FILE_NAME, e);
+                eprintln!("Warning: Failed to parse {CONFIG_FILE_NAME}: {e}");
                 return Ok(None);
             }
         };
@@ -534,8 +534,8 @@ impl Config {
 
         if normalize(expected_url) != normalize(actual_url) {
             eprintln!("Warning: Repository URL mismatch!");
-            eprintln!("  Expected: {}", expected_url);
-            eprintln!("  Actual: {}", actual_url);
+            eprintln!("  Expected: {expected_url}");
+            eprintln!("  Actual: {actual_url}");
             eprintln!("  Hooks will not be executed.");
             return false;
         }

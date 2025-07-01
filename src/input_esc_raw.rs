@@ -48,9 +48,11 @@ use std::io::{self, Write};
 /// This allows for proper redrawing when editing the input.
 pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option<String> {
     // Display prompt similar to dialoguer style
-    print!("{} {} ", "?".green().bold(), prompt);
+    let question_mark = "?".green().bold();
+    print!("{question_mark} {prompt} ");
     if let Some(def) = default {
-        print!("{} ", format!("[{}]", def).bright_black());
+        let default_text = format!("[{def}]").bright_black();
+        print!("{default_text} ");
     }
     io::stdout().flush().unwrap();
 
@@ -76,11 +78,13 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
                     // Move cursor to beginning of line and clear to end
                     print!("\r\x1b[K");
                     // Redraw prompt and current buffer
-                    print!("{} {} ", "?".green().bold(), prompt);
+                    let question_mark = "?".green().bold();
+                    print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        print!("{} ", format!("[{}]", def).bright_black());
+                        let default_text = format!("[{def}]").bright_black();
+                        print!("{default_text} ");
                     }
-                    print!("{}", buffer);
+                    print!("{buffer}");
                     io::stdout().flush().unwrap();
                 }
             }
@@ -89,9 +93,11 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
                     // Ctrl+U - clear line
                     buffer.clear();
                     print!("\r\x1b[K");
-                    print!("{} {} ", "?".green().bold(), prompt);
+                    let question_mark = "?".green().bold();
+                    print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        print!("{} ", format!("[{}]", def).bright_black());
+                        let default_text = format!("[{def}]").bright_black();
+                        print!("{default_text} ");
                     }
                     io::stdout().flush().unwrap();
                 } else if c == '\x17' {
@@ -101,15 +107,17 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
                     let last_space = trimmed.rfind(' ').map(|i| i + 1).unwrap_or(0);
                     buffer.truncate(last_space);
                     print!("\r\x1b[K");
-                    print!("{} {} ", "?".green().bold(), prompt);
+                    let question_mark = "?".green().bold();
+                    print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        print!("{} ", format!("[{}]", def).bright_black());
+                        let default_text = format!("[{def}]").bright_black();
+                        print!("{default_text} ");
                     }
-                    print!("{}", buffer);
+                    print!("{buffer}");
                     io::stdout().flush().unwrap();
                 } else {
                     buffer.push(c);
-                    print!("{}", c);
+                    print!("{c}");
                     io::stdout().flush().unwrap();
                 }
             }

@@ -13,7 +13,7 @@
 //! - **Immediate Feedback**: All output is flushed immediately
 
 use crate::constants::{
-    DEFAULT_BRANCH_MAIN, DEFAULT_BRANCH_MASTER, MSG_PRESS_ANY_KEY, MSG_SWITCH_FILE_WARNING,
+    DEFAULT_BRANCH_MAIN, DEFAULT_BRANCH_MASTER, MSG_PRESS_ANY_KEY, MSG_SWITCH_FILE_WARNING_PREFIX,
     SWITCH_TO_PREFIX,
 };
 use colored::*;
@@ -42,7 +42,8 @@ use std::path::{Path, PathBuf};
 /// // Then call print_success or print_error to overwrite
 /// ```
 pub fn print_progress(message: &str) {
-    print!("{} {}", "⏳".yellow(), message);
+    let spinner = "⏳".yellow();
+    print!("{spinner} {message}");
     io::stdout().flush().unwrap();
 }
 
@@ -66,7 +67,8 @@ pub fn print_progress(message: &str) {
 /// print_success("Worktree created successfully!");
 /// ```
 pub fn print_success(message: &str) {
-    println!("\r{} {}", "✓".green(), message);
+    let checkmark = "✓".green();
+    println!("\r{checkmark} {message}");
 }
 
 /// Displays an error message with a red X mark
@@ -88,7 +90,8 @@ pub fn print_success(message: &str) {
 /// print_error("Failed to create worktree: permission denied");
 /// ```
 pub fn print_error(message: &str) {
-    println!("\r{} {}", "✗".red(), message);
+    let cross = "✗".red();
+    println!("\r{cross} {message}");
 }
 
 /// Displays a warning message with a yellow exclamation mark
@@ -108,7 +111,8 @@ pub fn print_error(message: &str) {
 /// print_warning("Hook execution failed: command not found");
 /// ```
 pub fn print_warning(message: &str) {
-    println!("{} {}", "⚠".yellow(), message);
+    let warning = "⚠".yellow();
+    println!("{warning} {message}");
 }
 
 /// Gets a consistent terminal instance for UI operations
@@ -180,7 +184,7 @@ pub fn get_theme() -> ColorfulTheme {
 /// ```
 pub fn press_any_key_to_continue() -> io::Result<()> {
     println!();
-    println!("{}", MSG_PRESS_ANY_KEY);
+    println!("{MSG_PRESS_ANY_KEY}");
     Term::stdout().read_key()?;
     Ok(())
 }
@@ -212,10 +216,11 @@ pub fn press_any_key_to_continue() -> io::Result<()> {
 pub fn write_switch_path(path: &std::path::Path) {
     if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
         if let Err(e) = std::fs::write(&switch_file, path.display().to_string()) {
-            eprintln!("{}", MSG_SWITCH_FILE_WARNING.replace("{}", &e.to_string()));
+            eprintln!("{MSG_SWITCH_FILE_WARNING_PREFIX}{e}");
         }
     } else {
-        println!("{}{}", SWITCH_TO_PREFIX, path.display());
+        let path_display = path.display();
+        println!("{SWITCH_TO_PREFIX}{path_display}");
     }
 }
 
