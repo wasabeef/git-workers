@@ -740,7 +740,7 @@ impl GitWorktreeManager {
         self.get_default_worktree_base_path()
     }
 
-    /// Creates a worktree with a specific branch
+    /// Creates a worktree with a specific branch or tag
     ///
     /// Uses the git CLI command for branch-based worktree creation because
     /// git2's worktree API has limitations with branch handling.
@@ -748,10 +748,11 @@ impl GitWorktreeManager {
     /// # Arguments
     ///
     /// * `path` - The filesystem path for the new worktree
-    /// * `branch_name` - The branch to check out in the worktree
+    /// * `branch_name` - The branch or tag to check out in the worktree
     ///
     /// # Behavior
     ///
+    /// - If a tag reference: Creates worktree at the tag commit (detached HEAD)
     /// - If the branch exists: Creates worktree with that branch checked out
     /// - If the branch doesn't exist: Creates a new branch and worktree
     ///
@@ -768,8 +769,16 @@ impl GitWorktreeManager {
         let mut cmd = Command::new("git");
         cmd.current_dir(self.get_git_dir()?);
 
-        // Check if this is a remote branch reference (e.g., "origin/feature")
-        if branch_name.starts_with(GIT_REMOTE_PREFIX) {
+        // Check if this is a tag reference
+        if self
+            .repo
+            .find_reference(&format!("refs/tags/{branch_name}"))
+            .is_ok()
+        {
+            // For tags, we need to create a detached HEAD worktree
+            // git worktree add <path> <tag>
+            cmd.arg("worktree").arg("add").arg(path).arg(branch_name);
+        } else if branch_name.starts_with(GIT_REMOTE_PREFIX) {
             // For remote branches, we need to create a local branch
             // Extract the branch name without "origin/" prefix
             let local_branch_name = branch_name
@@ -985,6 +994,68 @@ impl GitWorktreeManager {
         remote_branches.sort();
 
         Ok((local_branches, remote_branches))
+    }
+
+    /// Lists all tags in the repository
+    ///
+    /// This method retrieves all tags, including both lightweight and annotated tags.
+    /// For annotated tags, it includes the tag message if available.
+    ///
+    /// # Returns
+    ///
+    /// A vector of tuples containing:
+    /// - Tag name (`String`)
+    /// - Tag message (`Option<String>`) - Some for annotated tags, None for lightweight tags
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if tag enumeration fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use git_workers::git::GitWorktreeManager;
+    /// # let manager = GitWorktreeManager::new().unwrap();
+    /// let tags = manager.list_all_tags().unwrap();
+    /// for (name, message) in tags {
+    ///     if let Some(msg) = message {
+    ///         println!("Tag: {} - {}", name, msg);
+    ///     } else {
+    ///         println!("Tag: {}", name);
+    ///     }
+    /// }
+    /// ```
+    pub fn list_all_tags(&self) -> Result<Vec<(String, Option<String>)>> {
+        let mut tags = Vec::new();
+
+        self.repo.tag_foreach(|oid, name| {
+            if let Ok(name_str) = std::str::from_utf8(name) {
+                // Remove refs/tags/ prefix
+                let tag_name = name_str
+                    .strip_prefix("refs/tags/")
+                    .unwrap_or(name_str)
+                    .to_string();
+
+                // Try to get tag message for annotated tags
+                let tag_message = if let Ok(obj) = self.repo.find_object(oid, None) {
+                    if let Ok(tag) = obj.peel_to_tag() {
+                        tag.message().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                tags.push((tag_name, tag_message));
+            }
+            true
+        })?;
+
+        // Sort tags by name (reverse order to show newest versions first)
+        tags.sort_by(|a, b| b.0.cmp(&a.0));
+
+        Ok(tags)
     }
 
     /// Deletes a local branch by name

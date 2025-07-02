@@ -3,22 +3,22 @@
 [![CI](https://github.com/wasabeef/git-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/wasabeef/git-workers/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An interactive CLI tool for managing Git worktrees with ease.
+An interactive CLI tool for managing Git worktrees.
 
 https://github.com/user-attachments/assets/fb5f0213-4a9f-43e2-9557-416070d7e122
 
 ## Features
 
-- 📋 List worktrees with detailed status information (branch, changes, ahead/behind)
-- 🔍 Fuzzy search through worktrees and branches
-- ➕ Create new worktrees from branches or HEAD
-- 📄 Automatically copy gitignored files (like .env) to new worktrees
-- ➖ Delete single or multiple worktrees
-- 🔄 Switch worktrees with automatic directory change
-- ✏️ Rename worktrees and optionally their branches
-- 🧹 Cleanup old worktrees by age
-- 🪝 Execute hooks on worktree lifecycle events
-- 📝 Edit and manage hooks through the interface
+- List worktrees with detailed status information (branch, changes, ahead/behind)
+- Fuzzy search through worktrees and branches
+- Create new worktrees from branches, tags, or HEAD
+- Automatically copy gitignored files (.env) to new worktrees
+- Delete single or multiple worktrees
+- Switch worktrees with automatic directory change
+- Rename worktrees and optionally their branches
+- Cleanup old worktrees by age
+- Execute hooks on worktree lifecycle events
+- Edit and manage hooks through the interface
 
 ## Installation
 
@@ -55,22 +55,26 @@ gw
 
 Git Workers provides an interactive menu-driven interface. Simply run `gw` and navigate through the options:
 
-- **List worktrees** (`•`): Display all worktrees with branch, changes, and sync status
-- **Search worktrees** (`?`): Fuzzy search through worktree names and branches
-- **Create worktree** (`+`): Create a new worktree with two options:
-  - **Create from current HEAD**: Creates a new worktree with a new branch from the current HEAD
-  - **Select branch (smart mode)**: Choose from local/remote branches with fuzzy search:
+- List worktrees (`•`) - Display all worktrees with branch, changes, and sync status
+- Search worktrees (`?`) - Fuzzy search through worktree names and branches
+- Create worktree (`+`) - Create a new worktree with three options:
+  - Create from current HEAD - Creates a new worktree with a new branch from the current HEAD
+  - Select branch - Choose from local/remote branches with fuzzy search:
     - Shows local branches (💻) and remote branches (⛅️) with usage status
     - Automatically handles branch conflicts (offers to create new branch if already in use)
-    - Fuzzy search enabled when >10 branches for easy navigation
-    - Automatically copies configured files (.env, etc.) to new worktrees
-- **Delete worktree** (`-`): Delete a single worktree with safety checks
-- **Batch delete** (`=`): Select and delete multiple worktrees at once (optionally deletes orphaned branches)
-- **Cleanup old worktrees** (`~`): Remove worktrees older than specified days
-- **Switch worktree** (`→`): Switch to another worktree (automatically changes directory)
-- **Rename worktree** (`*`): Rename worktree directory and optionally its branch
-- **Edit hooks** (`λ`): Configure lifecycle hooks in `.git-workers.toml`
-- **Exit** (`x`): Exit the application
+    - Fuzzy search enabled when >5 branches
+  - Select tag - Choose from tags to create a worktree at a specific version:
+    - Shows all tags (🏷️) with messages for annotated tags
+    - Creates a new branch from the selected tag
+    - Fuzzy search enabled when >5 tags
+  - Automatically copies configured files (.env, etc.) to new worktrees
+- Delete worktree (`-`) - Delete a single worktree with safety checks
+- Batch delete (`=`) - Select and delete multiple worktrees at once (optionally deletes orphaned branches)
+- Cleanup old worktrees (`~`) - Remove worktrees older than specified days
+- Switch worktree (`→`) - Switch to another worktree (automatically changes directory)
+- Rename worktree (`*`) - Rename worktree directory and optionally its branch
+- Edit hooks (`λ`) - Configure lifecycle hooks in `.git-workers.toml`
+- Exit (`x`) - Exit the application
 
 ### Configuration
 

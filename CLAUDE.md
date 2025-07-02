@@ -76,10 +76,11 @@ source /path/to/git-workers/shell/gw.sh
 - Security validation to prevent path traversal attacks
 - Follows same discovery priority as configuration files
 
-### Branch Option Simplification
+### Branch Option Enhancement
 
-- Reduced from 3 options to 2: "Create from current HEAD" and "Select branch (smart mode)"
-- Smart mode automatically handles branch conflicts and offers appropriate actions
+- Enhanced from 2 options to 3: "Create from current HEAD", "Select branch", and "Select tag"
+- Branch selection automatically handles conflicts and offers appropriate actions
+- Tag selection allows creating worktrees from specific versions
 
 ### Custom Path Support
 
@@ -96,11 +97,13 @@ source /path/to/git-workers/shell/gw.sh
 
 - **`get_branch_worktree_map()`**: Maps branch names to worktree names, including main worktree detection
 - **`list_all_branches()`**: Returns both local and remote branches (remote without "origin/" prefix)
+- **`list_all_tags()`**: Returns all tags with optional messages for annotated tags
 - **`create_worktree_with_new_branch()`**: Creates worktree with new branch from base branch (supports git-flow style workflows)
+- **`create_worktree_with_branch()`**: Enhanced to handle tag references for creating worktrees at specific versions
 - **`copy_configured_files()`**: Copies files specified in config to new worktrees
 - **`create_worktree_from_head()`**: Fixed path resolution for non-bare repositories (converts relative paths to absolute)
 - **`validate_custom_path()`**: Validates custom paths for security and compatibility
-- **`create_worktree_internal()`**: Enhanced with custom path input option
+- **`create_worktree_internal()`**: Enhanced with custom path input option and tag selection
 
 ## Architecture
 
@@ -198,6 +201,7 @@ Since Git lacks native rename functionality:
 - New test files added:
   - `worktree_path_test.rs`: Tests for path resolution and edge cases
   - `create_worktree_integration_test.rs`: Integration tests for worktree creation
+  - `create_worktree_from_tag_test.rs`: Tests for tag listing and worktree creation from tags
 
 ### String Formatting
 
@@ -332,3 +336,7 @@ The following test files have been added/updated for v0.3.0:
 - `tests/worktree_lock_test.rs`: 5 tests for concurrent access control
 - `tests/validate_custom_path_test.rs`: 9 tests for custom path validation including security checks
 - Enhanced `tests/create_worktree_integration_test.rs`: 2 additional tests for custom path creation
+- `tests/create_worktree_from_tag_test.rs`: 3 tests for tag functionality:
+  - `test_list_all_tags`: Tests tag listing with both lightweight and annotated tags
+  - `test_create_worktree_from_tag`: Tests creating worktree from tag with new branch
+  - `test_create_worktree_from_tag_detached`: Tests creating detached HEAD worktree from tag

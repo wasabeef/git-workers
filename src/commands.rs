@@ -398,7 +398,8 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 ///    - Custom path: User-specified relative path (e.g., `../custom/path`)
 /// 3. **Branch Selection**:
 ///    - Create from current HEAD
-///    - Create from existing branch (shows branch list)
+///    - Select branch (shows local/remote branch list)
+///    - Select tag (shows tag list)
 /// 4. **Creation**: Creates the worktree with progress indication
 /// 5. **File Copy**: Copies configured files (e.g., `.env`) from main worktree
 /// 6. **Post-create Hooks**: Executes any configured post-create hooks
@@ -581,7 +582,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Branch handling
     println!();
-    let branch_options = vec!["Create from current HEAD", "Select branch (smart mode)"];
+    let branch_options = vec!["Create from current HEAD", "Select branch", "Select tag"];
 
     let branch_choice = match Select::with_theme(&get_theme())
         .with_prompt("Select branch option")
@@ -594,7 +595,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     let (branch, new_branch_name) = match branch_choice {
         1 => {
-            // Select branch (smart mode)
+            // Select branch
             let (local_branches, remote_branches) = manager.list_all_branches()?;
             if local_branches.is_empty() && remote_branches.is_empty() {
                 utils::print_warning("No branches found, creating from HEAD");
@@ -632,7 +633,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 println!();
 
                 // Use FuzzySelect for better search experience when there are many branches
-                let selection_result = if branch_items.len() > 10 {
+                let selection_result = if branch_items.len() > 5 {
                     println!("Type to search branches (fuzzy search enabled):");
                     FuzzySelect::with_theme(&get_theme())
                         .with_prompt("Select a branch")
@@ -785,6 +786,58 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 }
             }
         }
+        2 => {
+            // Select tag
+            let tags = manager.list_all_tags()?;
+            if tags.is_empty() {
+                utils::print_warning("No tags found, creating from HEAD");
+                (None, None)
+            } else {
+                // Create items for tag selection with message preview
+                let tag_items: Vec<String> = tags
+                    .iter()
+                    .map(|(name, message)| {
+                        if let Some(msg) = message {
+                            // Truncate message to first line for display
+                            let first_line = msg.lines().next().unwrap_or("");
+                            let truncated = if first_line.len() > 50 {
+                                format!("{}...", &first_line[..50])
+                            } else {
+                                first_line.to_string()
+                            };
+                            format!("🏷️  {name} - {truncated}")
+                        } else {
+                            format!("🏷️  {name}")
+                        }
+                    })
+                    .collect();
+
+                println!();
+
+                // Use FuzzySelect for better search experience when there are many tags
+                let selection_result = if tag_items.len() > 5 {
+                    println!("Type to search tags (fuzzy search enabled):");
+                    FuzzySelect::with_theme(&get_theme())
+                        .with_prompt("Select a tag")
+                        .items(&tag_items)
+                        .interact_opt()?
+                } else {
+                    Select::with_theme(&get_theme())
+                        .with_prompt("Select a tag")
+                        .items(&tag_items)
+                        .interact_opt()?
+                };
+
+                match selection_result {
+                    Some(selection) => {
+                        let selected_tag = &tags[selection].0;
+                        // For tags, we always create a new branch named after the worktree
+                        (Some(selected_tag.clone()), Some(name.clone()))
+                    }
+                    None => return Ok(false),
+                }
+            }
+        }
         _ => {
             // Create from current HEAD
             (None, None)
@@ -800,10 +853,22 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     println!("  {name_label} {name_value}");
     if let Some(new_branch) = &new_branch_name {
         let base_branch_name = branch.as_ref().unwrap();
-        let branch_label = "New Branch:".bright_black();
-        let branch_value = new_branch.yellow();
-        let base_value = base_branch_name.bright_black();
-        println!("  {branch_label} {branch_value} (from {base_value})");
+        // Check if the base branch is a tag
+        if manager
+            .repo()
+            .find_reference(&format!("refs/tags/{base_branch_name}"))
+            .is_ok()
+        {
+            let branch_label = "New Branch:".bright_black();
+            let branch_value = new_branch.yellow();
+            let tag_value = format!("tag: {base_branch_name}").bright_cyan();
+            println!("  {branch_label} {branch_value} (from {tag_value})");
+        } else {
+            let branch_label = "New Branch:".bright_black();
+            let branch_value = new_branch.yellow();
+            let base_value = base_branch_name.bright_black();
+            println!("  {branch_label} {branch_value} (from {base_value})");
+        }
     } else if let Some(branch_name) = &branch {
         let branch_label = "Branch:".bright_black();
         let branch_value = branch_name.yellow();

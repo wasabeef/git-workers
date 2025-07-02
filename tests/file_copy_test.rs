@@ -419,6 +419,19 @@ fn test_empty_directory_copy() -> Result<()> {
     // Create empty directory
     fs::create_dir(repo_path.join("empty_dir"))?;
 
+    // Add a .gitkeep file to track the empty directory
+    fs::write(repo_path.join("empty_dir/.gitkeep"), "")?;
+
+    // Add and commit the directory
+    Command::new("git")
+        .current_dir(&repo_path)
+        .args(["add", "empty_dir/.gitkeep"])
+        .output()?;
+    Command::new("git")
+        .current_dir(&repo_path)
+        .args(["commit", "-m", "Add empty directory"])
+        .output()?;
+
     // Create worktrees directory
     let worktrees_dir = repo_path.join("worktrees");
     fs::create_dir(&worktrees_dir)?;
@@ -446,9 +459,10 @@ fn test_empty_directory_copy() -> Result<()> {
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
 
-    // Verify empty directory was created (empty directories report 0 files copied)
-    assert_eq!(copied.len(), 0);
+    // Verify empty directory was copied (1 file: .gitkeep)
+    assert_eq!(copied.len(), 1);
     assert!(worktree_path.join("empty_dir").is_dir());
+    assert!(worktree_path.join("empty_dir/.gitkeep").is_file());
 
     Ok(())
 }

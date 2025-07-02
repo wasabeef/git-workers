@@ -43,6 +43,40 @@ To test that the switch command properly updates the current worktree status:
    - Run `pwd` to confirm you're in the new directory
    - Run `gw` again and check that the selected worktree shows as "[current]"
 
+## Testing Tag-based Worktree Creation
+
+1. **Create Test Tags**
+
+   ```bash
+   # In any worktree
+   cd /tmp/gw-test/branch/main
+
+   # Create a lightweight tag
+   git tag v1.0.0
+
+   # Create an annotated tag
+   git tag -a v2.0.0 -m "Release version 2.0.0"
+
+   # Push tags if needed
+   git push origin --tags
+   ```
+
+2. **Test Tag Selection**
+
+   ```bash
+   # Run gw
+   gw
+   ```
+
+3. **Expected Behavior**
+   - Select "+ Create worktree"
+   - Enter a worktree name (e.g., "release-test")
+   - Select "Select tag" option
+   - Should see list of tags with 🏷️ icon
+   - Annotated tags should show their message
+   - Select a tag and confirm creation
+   - New worktree should be created with a new branch from the tag
+
 ## Testing Error Display Fix
 
 1. **Test with No Worktrees**

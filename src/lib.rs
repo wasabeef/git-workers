@@ -14,6 +14,7 @@
 //! - **Rename Support**: Complete worktree renaming including Git metadata
 //! - **Custom Paths**: Flexible worktree placement with validated custom paths
 //! - **File Copying**: Automatically copy configured files to new worktrees
+//! - **Tag Support**: Create worktrees from specific Git tags
 //!
 //! # Architecture
 //!
