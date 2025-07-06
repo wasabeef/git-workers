@@ -19,6 +19,7 @@
 //! - `Ctrl+U`: Clear entire line
 //! - `Ctrl+W`: Delete previous word
 
+use crate::constants::*;
 use colored::*;
 use console::{Key, Term};
 use std::io::{self, Write};
@@ -48,10 +49,10 @@ use std::io::{self, Write};
 /// This allows for proper redrawing when editing the input.
 pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option<String> {
     // Display prompt similar to dialoguer style
-    let question_mark = "?".green().bold();
+    let question_mark = ICON_QUESTION.green().bold();
     print!("{question_mark} {prompt} ");
     if let Some(def) = default {
-        let default_text = format!("[{def}]").bright_black();
+        let default_text = FORMAT_DEFAULT_VALUE.replace("{}", def).bright_black();
         print!("{default_text} ");
     }
     io::stdout().flush().unwrap();
@@ -76,12 +77,12 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
                 if !buffer.is_empty() {
                     buffer.pop();
                     // Move cursor to beginning of line and clear to end
-                    print!("\r\x1b[K");
+                    print!("{ANSI_CLEAR_LINE}");
                     // Redraw prompt and current buffer
-                    let question_mark = "?".green().bold();
+                    let question_mark = ICON_QUESTION.green().bold();
                     print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        let default_text = format!("[{def}]").bright_black();
+                        let default_text = FORMAT_DEFAULT_VALUE.replace("{}", def).bright_black();
                         print!("{default_text} ");
                     }
                     print!("{buffer}");
@@ -89,28 +90,28 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
                 }
             }
             Ok(Key::Char(c)) => {
-                if c == '\x15' {
+                if c == CTRL_U {
                     // Ctrl+U - clear line
                     buffer.clear();
-                    print!("\r\x1b[K");
-                    let question_mark = "?".green().bold();
+                    print!("{ANSI_CLEAR_LINE}");
+                    let question_mark = ICON_QUESTION.green().bold();
                     print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        let default_text = format!("[{def}]").bright_black();
+                        let default_text = FORMAT_DEFAULT_VALUE.replace("{}", def).bright_black();
                         print!("{default_text} ");
                     }
                     io::stdout().flush().unwrap();
-                } else if c == '\x17' {
+                } else if c == CTRL_W {
                     // Ctrl+W - delete word
                     // Delete last word
                     let trimmed = buffer.trim_end();
-                    let last_space = trimmed.rfind(' ').map(|i| i + 1).unwrap_or(0);
+                    let last_space = trimmed.rfind(CHAR_SPACE).map(|i| i + 1).unwrap_or(0);
                     buffer.truncate(last_space);
-                    print!("\r\x1b[K");
-                    let question_mark = "?".green().bold();
+                    print!("{ANSI_CLEAR_LINE}");
+                    let question_mark = ICON_QUESTION.green().bold();
                     print!("{question_mark} {prompt} ");
                     if let Some(def) = default {
-                        let default_text = format!("[{def}]").bright_black();
+                        let default_text = FORMAT_DEFAULT_VALUE.replace("{}", def).bright_black();
                         print!("{default_text} ");
                     }
                     print!("{buffer}");

@@ -33,6 +33,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Config;
+use crate::constants::*;
 
 /// Context information passed to hook commands
 ///
@@ -127,24 +128,27 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
     let config = Config::load()?;
 
     if let Some(commands) = config.hooks.get(hook_type) {
-        println!("Running {hook_type} hooks...");
+        println!(
+            "{} {hook_type} hooks...",
+            INFO_RUNNING_HOOKS.replace("{}", "").trim()
+        );
 
         for cmd in commands {
             // Replace template placeholders with actual values
             let expanded_cmd = cmd
-                .replace("{{worktree_name}}", &context.worktree_name)
+                .replace(TEMPLATE_WORKTREE_NAME, &context.worktree_name)
                 .replace(
-                    "{{worktree_path}}",
+                    TEMPLATE_WORKTREE_PATH,
                     &context.worktree_path.display().to_string(),
                 );
 
-            println!("  > {expanded_cmd}");
+            println!("{INFO_HOOK_COMMAND_PREFIX}{expanded_cmd}");
 
             // Execute the command in a shell for maximum compatibility
             // This allows complex commands with pipes, redirects, etc.
             // Use spawn() and wait() to allow real-time output streaming
-            match Command::new("sh")
-                .arg("-c")
+            match Command::new(SHELL_CMD)
+                .arg(SHELL_OPT_COMMAND)
                 .arg(&expanded_cmd)
                 .current_dir(&context.worktree_path)
                 .stdout(std::process::Stdio::inherit())
@@ -158,18 +162,19 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
                                 // Log hook failures but don't stop execution
                                 // This prevents a misconfigured hook from breaking worktree operations
                                 eprintln!(
-                                    "Hook command failed with exit code: {:?}",
-                                    status.code()
+                                    "{}",
+                                    ERROR_HOOK_EXIT_CODE
+                                        .replace("{:?}", &format!("{:?}", status.code()))
                                 );
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to wait for hook command: {e}");
+                            eprintln!("{ERROR_HOOK_WAIT_PREFIX}{e}");
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to execute hook command: {e}");
+                    eprintln!("{ERROR_HOOK_EXECUTE_PREFIX}{e}");
                 }
             }
         }

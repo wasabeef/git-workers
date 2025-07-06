@@ -161,7 +161,7 @@ fn main() -> Result<()> {
 
         // Show menu with List worktrees as default selection
         let selection = match Select::with_theme(&get_theme())
-            .with_prompt("What would you like to do?")
+            .with_prompt(constants::PROMPT_ACTION)
             .items(&display_items)
             .default(0) // Set List worktrees (index 0) as default
             .interact_opt()?
@@ -170,7 +170,7 @@ fn main() -> Result<()> {
             None => {
                 // User pressed ESC - exit cleanly
                 clear_screen(&term);
-                let exit_msg = "Exiting Git Workers...".bright_black();
+                let exit_msg = constants::INFO_EXITING.bright_black();
                 println!("{exit_msg}");
                 break;
             }
@@ -182,7 +182,7 @@ fn main() -> Result<()> {
             MenuAction::Continue => continue,
             MenuAction::Exit => {
                 clear_screen(&term);
-                let exit_msg = "Exiting Git Workers...".bright_black();
+                let exit_msg = constants::INFO_EXITING.bright_black();
                 println!("{exit_msg}");
                 break;
             }
@@ -308,10 +308,11 @@ fn setup_terminal_config() {
     }
 
     // Set color mode based on environment
-    if env::var("NO_COLOR").is_ok() {
+    if env::var(constants::ENV_NO_COLOR).is_ok() {
         colored::control::set_override(false);
-    } else if env::var("FORCE_COLOR").is_ok()
-        || env::var("CLICOLOR_FORCE").unwrap_or_default() == "1"
+    } else if env::var(constants::ENV_FORCE_COLOR).is_ok()
+        || env::var(constants::ENV_CLICOLOR_FORCE).unwrap_or_default()
+            == constants::ENV_CLICOLOR_FORCE_VALUE
     {
         colored::control::set_override(true);
     }
