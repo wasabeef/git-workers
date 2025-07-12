@@ -10,7 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::FilesConfig;
-use crate::constants::{MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WORKTREES_SUBDIR};
+use crate::constants::{
+    BYTES_PER_MB, COLON_POSITION_WINDOWS, GIT_DIR, ICON_ERROR, ICON_FILE, ICON_INFO, ICON_SUCCESS,
+    ICON_WARNING, MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WINDOWS_PATH_MIN_LENGTH, WORKTREES_SUBDIR,
+};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
@@ -31,7 +34,7 @@ use crate::git::{GitWorktreeManager, WorktreeInfo};
 ///
 /// # File Size Limits
 ///
-/// - Individual files larger than 100MB are automatically skipped with a warning
+/// - Individual files larger than MAX_FILE_SIZE_MB are automatically skipped with a warning
 /// - This prevents accidentally copying large binary files or build artifacts
 ///
 /// # Security
@@ -68,12 +71,12 @@ pub fn copy_configured_files(
 
     let mut copied_files = Vec::new();
 
-    let msg = "📄 Copying configured files...".bright_cyan();
+    let msg = format!("{ICON_FILE} Copying configured files...").bright_cyan();
     println!("\n{msg}");
 
     for file_pattern in &config.copy {
         if !is_safe_path(file_pattern) {
-            let warning = "⚠️".yellow();
+            let warning = ICON_WARNING.yellow();
             let pattern = file_pattern.yellow();
             println!("  {warning} Skipping unsafe path: {pattern}");
             continue;
@@ -85,9 +88,9 @@ pub fn copy_configured_files(
         if source_path.exists() {
             if let Ok(size) = calculate_path_size(&source_path) {
                 if size > MAX_FILE_SIZE && source_path.is_file() {
-                    let warning = "⚠️".yellow();
+                    let warning = ICON_WARNING.yellow();
                     let pattern = file_pattern.yellow();
-                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                    let size_mb = size as f64 / BYTES_PER_MB as f64;
                     println!("  {warning} Skipping large file: {pattern} ({size_mb:.1} MB)");
                     continue;
                 }
@@ -98,7 +101,7 @@ pub fn copy_configured_files(
         match copy_file_or_directory(&source_path, &dest_path) {
             Ok(count) => {
                 if count > 0 {
-                    let checkmark = "✓".green();
+                    let checkmark = ICON_SUCCESS.green();
                     let pattern = file_pattern.green();
                     let plural = if count == 1 { "" } else { "s" };
                     println!("  {checkmark} Copied: {pattern} ({count} file{plural})");
@@ -110,11 +113,11 @@ pub fn copy_configured_files(
                 if e.to_string().contains("No such file or directory")
                     || e.to_string().contains("not found")
                 {
-                    let warning = "⚠️".yellow();
+                    let warning = ICON_WARNING.yellow();
                     let pattern = file_pattern.yellow();
                     println!("  {warning} Not found: {pattern} (skipping)");
                 } else {
-                    let cross = "✗".red();
+                    let cross = ICON_ERROR.red();
                     let pattern = file_pattern.red();
                     println!("  {cross} Failed to copy {pattern}: {e}");
                 }
@@ -123,7 +126,7 @@ pub fn copy_configured_files(
     }
 
     if copied_files.is_empty() {
-        let info = "ℹ️".blue();
+        let info = ICON_INFO.blue();
         println!("  {info} No files were copied");
     }
 
@@ -219,7 +222,7 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     let cwd = std::env::current_dir()?;
 
     // If we're in the main repository directory, use it
-    if cwd.join(".git").exists() {
+    if cwd.join(GIT_DIR).exists() {
         return Ok(cwd);
     }
 
@@ -233,7 +236,7 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
 }
 
 /// Maximum file size for automatic copying in bytes
-const MAX_FILE_SIZE: u64 = MAX_FILE_SIZE_MB * 1024 * 1024;
+const MAX_FILE_SIZE: u64 = MAX_FILE_SIZE_MB * BYTES_PER_MB;
 
 /// Calculates the total size of a file or directory
 ///
@@ -310,7 +313,9 @@ fn is_safe_path(path: &str) -> bool {
     }
 
     // Check for Windows absolute paths (C:\, D:\, etc.)
-    if path.len() >= 3 && path.chars().nth(1) == Some(':') {
+    if path.len() >= WINDOWS_PATH_MIN_LENGTH
+        && path.chars().nth(COLON_POSITION_WINDOWS) == Some(':')
+    {
         return false;
     }
 
@@ -415,7 +420,7 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
         {
             println!(
                 "  {} Skipping circular reference: {}",
-                "⚠️".yellow(),
+                ICON_WARNING.yellow(),
                 source_path.display()
             );
             continue;
@@ -426,7 +431,7 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
             Err(e) => {
                 println!(
                     "  {} Failed to copy {}: {}",
-                    "⚠️".yellow(),
+                    ICON_WARNING.yellow(),
                     source_path.display(),
                     e
                 );

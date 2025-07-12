@@ -35,7 +35,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::constants::CONFIG_FILE_NAME;
+use crate::constants::{
+    CONFIG_FILE_NAME, ERROR_ACTUAL_URL_PREFIX, ERROR_CONFIG_PARSE, ERROR_CONFIG_READ,
+    ERROR_EXPECTED_URL_PREFIX, ERROR_HOOKS_NOT_EXECUTED, ERROR_REPO_URL_MISMATCH, GIT_CMD, GIT_DIR,
+    GIT_LIST, GIT_OPT_PORCELAIN, GIT_ORIGIN, GIT_URL_SUFFIX, GIT_WORKTREE, PORCELAIN_WORKTREE,
+};
 
 /// Main configuration structure for Git Workers
 ///
@@ -275,16 +279,16 @@ impl Config {
                 }
 
                 // 2. Try to detect worktree pattern by listing existing worktrees
-                if let Ok(output) = std::process::Command::new("git")
-                    .args(["worktree", "list", "--porcelain"])
+                if let Ok(output) = std::process::Command::new(GIT_CMD)
+                    .args([GIT_WORKTREE, GIT_LIST, GIT_OPT_PORCELAIN])
                     .current_dir(&cwd)
                     .output()
                 {
                     let worktree_paths = String::from_utf8_lossy(&output.stdout)
                         .lines()
                         .filter_map(|line| {
-                            if line.starts_with("worktree ") {
-                                Some(line.trim_start_matches("worktree ").to_string())
+                            if line.starts_with(PORCELAIN_WORKTREE) {
+                                Some(line.trim_start_matches(PORCELAIN_WORKTREE).to_string())
                             } else {
                                 None
                             }
@@ -366,12 +370,12 @@ impl Config {
                     // We're in the worktrees directory itself
                     if let Some(parent) = cwd.parent() {
                         let main_config = parent.join(CONFIG_FILE_NAME);
-                        if main_config.exists() && parent.join(".git").is_dir() {
+                        if main_config.exists() && parent.join(GIT_DIR).is_dir() {
                             return Self::load_from_file(&main_config, repo);
                         }
                     }
                 } else {
-                    let git_path = cwd.join(".git");
+                    let git_path = cwd.join(GIT_DIR);
                     if !git_path.is_dir() {
                         // This is a linked worktree, find the main/master worktree
                         if let Some(parent) = cwd.parent() {
@@ -384,7 +388,7 @@ impl Config {
                                 if let Some(repo_root) = parent.parent() {
                                     // Check for main worktree
                                     let main_config = repo_root.join(CONFIG_FILE_NAME);
-                                    if main_config.exists() && repo_root.join(".git").is_dir() {
+                                    if main_config.exists() && repo_root.join(GIT_DIR).is_dir() {
                                         return Self::load_from_file(&main_config, repo);
                                     }
 
@@ -459,7 +463,12 @@ impl Config {
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Warning: Failed to read {CONFIG_FILE_NAME}: {e}");
+                eprintln!(
+                    "{}",
+                    ERROR_CONFIG_READ
+                        .replace("{}", CONFIG_FILE_NAME)
+                        .replace("{}", &e.to_string())
+                );
                 return Ok(None);
             }
         };
@@ -467,7 +476,12 @@ impl Config {
         let config = match toml::from_str::<Config>(&content) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Warning: Failed to parse {CONFIG_FILE_NAME}: {e}");
+                eprintln!(
+                    "{}",
+                    ERROR_CONFIG_PARSE
+                        .replace("{}", CONFIG_FILE_NAME)
+                        .replace("{}", &e.to_string())
+                );
                 return Ok(None);
             }
         };
@@ -515,7 +529,7 @@ impl Config {
     /// - `https://github.com/owner/repo`
     /// - `HTTPS://GITHUB.COM/OWNER/REPO/`
     fn validate_repository_url(repo: &git2::Repository, expected_url: &str) -> bool {
-        let remote = match repo.find_remote("origin") {
+        let remote = match repo.find_remote(GIT_ORIGIN.trim_end_matches('/')) {
             Ok(r) => r,
             Err(_) => return true, // No origin remote, skip validation
         };
@@ -527,16 +541,16 @@ impl Config {
 
         // Normalize URLs for comparison
         let normalize = |url: &str| {
-            url.trim_end_matches(".git")
+            url.trim_end_matches(GIT_URL_SUFFIX)
                 .trim_end_matches('/')
                 .to_lowercase()
         };
 
         if normalize(expected_url) != normalize(actual_url) {
-            eprintln!("Warning: Repository URL mismatch!");
-            eprintln!("  Expected: {expected_url}");
-            eprintln!("  Actual: {actual_url}");
-            eprintln!("  Hooks will not be executed.");
+            eprintln!("{ERROR_REPO_URL_MISMATCH}");
+            eprintln!("{ERROR_EXPECTED_URL_PREFIX}{expected_url}");
+            eprintln!("{ERROR_ACTUAL_URL_PREFIX}{actual_url}");
+            eprintln!("{ERROR_HOOKS_NOT_EXECUTED}");
             return false;
         }
 

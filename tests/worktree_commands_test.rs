@@ -233,8 +233,7 @@ fn test_create_worktree_from_head_multiple_patterns() -> Result<()> {
         let worktree_path = manager.create_worktree(pattern, None)?;
         assert!(
             worktree_path.exists(),
-            "Failed to create worktree: {}",
-            description
+            "Failed to create worktree: {description}"
         );
 
         // Clean up for next iteration

@@ -90,8 +90,8 @@ mod prompt_formatting_tests {
         let default = "default_value";
 
         // Simulate the formatting used in input_esc_raw
-        let formatted_prompt = format!("{} {} ", "?".green().bold(), prompt);
-        let formatted_default = format!("{} ", format!("[{}]", default).bright_black());
+        let formatted_prompt = format!("{} {prompt} ", "?".green().bold());
+        let formatted_default = format!("{} ", format!("[{default}]").bright_black());
 
         assert!(formatted_prompt.contains("Enter name"));
         assert!(formatted_default.contains("default_value"));
@@ -100,7 +100,7 @@ mod prompt_formatting_tests {
     #[test]
     fn test_prompt_without_default() {
         let prompt = "Enter value";
-        let formatted = format!("{} {} ", "?".green().bold(), prompt);
+        let formatted = format!("{} {prompt} ", "?".green().bold());
 
         assert!(formatted.contains("Enter value"));
         assert!(!formatted.contains("["));

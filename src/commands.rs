@@ -27,8 +27,19 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::config::Config;
 use crate::constants::{
-    section_header, CONFIG_FILE_NAME, GIT_CRITICAL_DIRS, GIT_REMOTE_PREFIX, GIT_RESERVED_NAMES,
-    INVALID_FILESYSTEM_CHARS, MAX_WORKTREE_NAME_LENGTH, WINDOWS_RESERVED_CHARS, WORKTREES_SUBDIR,
+    section_header, ACTION_CHANGE_BRANCH_NAME, ACTION_CREATE_NEW_BRANCH, ACTION_USE_LOCAL_BRANCH,
+    ACTION_USE_WORKTREE_NAME, BRANCH_OPTION_SELECT_BRANCH, BRANCH_OPTION_SELECT_TAG, CHAR_DOT,
+    CONFIG_FILE_NAME, DEFAULT_EMPTY_STRING, DEFAULT_REPO_NAME, DEFAULT_WORKTREE_CLEANUP_DAYS,
+    FUZZY_SEARCH_THRESHOLD, GIT_CRITICAL_DIRS, GIT_DIR, GIT_REMOTE_PREFIX, GIT_RESERVED_NAMES,
+    HOOK_POST_CREATE, HOOK_POST_SWITCH, HOOK_PRE_REMOVE, ICON_ARROW, ICON_LIST, ICON_LOCAL_BRANCH,
+    ICON_REMOTE_BRANCH, ICON_SWITCH, ICON_TAG_INDICATOR, INFO_TIP, INFO_USE_CREATE,
+    INVALID_FILESYSTEM_CHARS, LABEL_BRANCH, LABEL_MODIFIED, LABEL_NAME, LABEL_NO, LABEL_PATH,
+    LABEL_YES, MAX_WORKTREE_NAME_LENGTH, MIN_PATH_COMPONENTS_FOR_SUBDIR,
+    PATH_COMPONENT_SECOND_INDEX, PROGRESS_BAR_TICK_MILLIS, TAG_MESSAGE_TRUNCATE_LENGTH,
+    UI_BRANCH_COL_EXTRA_WIDTH, UI_FOOTER_LINES, UI_HEADER_LINES, UI_MIN_ITEMS_PER_PAGE,
+    UI_MODIFIED_COL_WIDTH, UI_NAME_COL_MIN_WIDTH, UI_PATH_COL_WIDTH, WARNING_NO_WORKTREES,
+    WINDOWS_RESERVED_CHARS, WORKTREES_SUBDIR, WORKTREE_LOCATION_CUSTOM_PATH,
+    WORKTREE_LOCATION_SAME_LEVEL, WORKTREE_LOCATION_SUBDIRECTORY,
 };
 use crate::file_copy;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
@@ -51,9 +62,9 @@ use crate::utils::{self, get_theme, press_any_key_to_continue, write_switch_path
 /// - `▸` in bright blue for other worktrees
 fn get_worktree_icon(is_current: bool) -> colored::ColoredString {
     if is_current {
-        "→".bright_green().bold()
+        ICON_SWITCH.bright_green().bold()
     } else {
-        "▸".bright_blue()
+        ICON_ARROW.bright_blue()
     }
 }
 
@@ -111,12 +122,15 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     if worktrees.is_empty() {
         println!();
-        let msg = "• No worktrees found.".bright_black();
+        let msg = WARNING_NO_WORKTREES.bright_black();
         println!("{msg}");
         println!();
-        let tip_label = "Tip:".bright_black();
+        let tip_label = INFO_TIP.bright_black();
         let create_msg = "+ Create worktree".green();
-        println!("  {tip_label} Use '{create_msg}' to create your first worktree");
+        println!(
+            "  {tip_label} {}",
+            INFO_USE_CREATE.replace("{}", &create_msg)
+        );
         println!();
         press_any_key_to_continue()?;
         return Ok(());
@@ -148,10 +162,10 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     // Determine items per page dynamically based on terminal height
     let term_height = Term::stdout().size().0 as usize;
-    let header_lines = 7; // Title + header + separator (increased for modified column)
-    let footer_lines = 4; // Navigation help + prompt
+    let header_lines = UI_HEADER_LINES; // Title + header + separator (increased for modified column)
+    let footer_lines = UI_FOOTER_LINES; // Navigation help + prompt
     let available_lines = term_height.saturating_sub(header_lines + footer_lines);
-    let items_per_page = available_lines.max(5); // At least 5 items per page
+    let items_per_page = available_lines.max(UI_MIN_ITEMS_PER_PAGE); // At least 5 items per page
 
     let total_pages = sorted_worktrees.len().div_ceil(items_per_page);
     let mut current_page = 0;
@@ -170,17 +184,18 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
         let page_worktrees = &sorted_worktrees[start_idx..end_idx];
 
         // Table header
-        let name_width = max_name_len.max(8);
-        let branch_width = max_branch_len.max(10) + 10; // Extra space for [current] marker
-        let modified_width = 8;
+        let name_width = max_name_len.max(UI_NAME_COL_MIN_WIDTH);
+        let branch_width =
+            max_branch_len.max(UI_BRANCH_COL_EXTRA_WIDTH) + UI_BRANCH_COL_EXTRA_WIDTH; // Extra space for [current] marker
+        let modified_width = UI_MODIFIED_COL_WIDTH;
 
         println!();
         println!(
             "  {:<name_width$} {:<branch_width$} {:<modified_width$} {}",
-            "Name".bright_white().bold(),
-            "Branch".bright_white().bold(),
-            "Modified".bright_white().bold(),
-            "Path".bright_white().bold(),
+            LABEL_NAME.bright_white().bold(),
+            LABEL_BRANCH.bright_white().bold(),
+            LABEL_MODIFIED.bright_white().bold(),
+            LABEL_PATH.bright_white().bold(),
             name_width = name_width,
             branch_width = branch_width,
             modified_width = modified_width
@@ -194,23 +209,23 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
             name_width = name_width,
             branch_width = branch_width,
             modified_width = modified_width,
-            path_width = 40
+            path_width = UI_PATH_COL_WIDTH
         );
 
         // Table rows
         for wt in page_worktrees {
             let icon = get_worktree_icon(wt.is_current);
             let branch_display = if wt.is_current {
-                format!("{branch} [current]", branch = wt.branch).bright_green()
+                format!("{} [current]", wt.branch).bright_green()
             } else {
                 wt.branch.yellow()
             };
 
             // Modified status
             let modified = if wt.has_changes {
-                "Yes".bright_yellow()
+                LABEL_YES.bright_yellow()
             } else {
-                "No".bright_black()
+                LABEL_NO.bright_black()
             };
 
             println!(
@@ -235,7 +250,7 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
         if total_pages > 1 {
             println!(
                 "  {} Page {} of {} (showing {}-{} of {})",
-                "•".bright_blue(),
+                ICON_LIST.bright_blue(),
                 current_page + 1,
                 total_pages,
                 start_idx + 1,
@@ -329,7 +344,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
     let items: Vec<String> = worktrees
         .iter()
         .map(|wt| {
-            let mut item = format!("{name} ({branch})", name = wt.name, branch = wt.branch);
+            let mut item = format!("{} ({})", wt.name, wt.branch);
             if wt.is_current {
                 item.push_str(" (current)");
             }
@@ -375,7 +390,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Execute post-switch hooks
     if let Err(e) = hooks::execute_hooks(
-        "post-switch",
+        HOOK_POST_SWITCH,
         &HookContext {
             worktree_name: selected_worktree.name.clone(),
             worktree_path: selected_worktree.path.clone(),
@@ -523,7 +538,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
             .workdir()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or("repo");
+            .unwrap_or(DEFAULT_REPO_NAME);
 
         let options = vec![
             format!("Same level as repository (../{name})"),
@@ -534,7 +549,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         let selection = match Select::with_theme(&get_theme())
             .with_prompt("Select worktree location pattern")
             .items(&options)
-            .default(1) // Default to subdirectory (recommended)
+            .default(WORKTREE_LOCATION_SUBDIRECTORY) // Default to subdirectory (recommended)
             .interact_opt()?
         {
             Some(selection) => selection,
@@ -542,19 +557,16 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         };
 
         match selection {
-            0 => format!("../{name}"),                 // Same level
-            1 => format!("{WORKTREES_SUBDIR}/{name}"), // Subdirectory pattern
-            2 => {
+            WORKTREE_LOCATION_SAME_LEVEL => format!("../{name}"), // Same level
+            WORKTREE_LOCATION_SUBDIRECTORY => format!("{WORKTREES_SUBDIR}/{name}"), // Subdirectory pattern
+            WORKTREE_LOCATION_CUSTOM_PATH => {
                 // Custom path input
                 println!();
-                println!(
-                    "{}",
-                    "Enter custom path (relative to project root):".bright_cyan()
-                );
-                println!(
-                    "{}",
-                    "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed()
-                );
+                let msg = "Enter custom path (relative to project root):".bright_cyan();
+                println!("{msg}");
+                let examples =
+                    "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed();
+                println!("{examples}");
 
                 let custom_path = match input_esc("Custom path") {
                     Some(path) => path.trim().to_string(),
@@ -594,7 +606,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     };
 
     let (branch, new_branch_name) = match branch_choice {
-        1 => {
+        BRANCH_OPTION_SELECT_BRANCH => {
             // Select branch
             let (local_branches, remote_branches) = manager.list_all_branches()?;
             if local_branches.is_empty() && remote_branches.is_empty() {
@@ -611,9 +623,11 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Add local branches with laptop icon (laptop emoji takes 2 columns)
                 for branch in &local_branches {
                     if let Some(worktree) = branch_worktree_map.get(branch) {
-                        branch_items.push(format!("💻 {branch} (in use by '{worktree}')"));
+                        branch_items.push(format!(
+                            "{ICON_LOCAL_BRANCH}{branch} (in use by '{worktree}')"
+                        ));
                     } else {
-                        branch_items.push(format!("💻 {branch}"));
+                        branch_items.push(format!("{ICON_LOCAL_BRANCH}{branch}"));
                     }
                     branch_refs.push((branch.clone(), false));
                 }
@@ -622,10 +636,11 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 for branch in &remote_branches {
                     let full_remote_name = format!("{GIT_REMOTE_PREFIX}{branch}");
                     if let Some(worktree) = branch_worktree_map.get(&full_remote_name) {
-                        branch_items
-                            .push(format!("⛅️ {full_remote_name} (in use by '{worktree}')"));
+                        branch_items.push(format!(
+                            "{ICON_REMOTE_BRANCH}{full_remote_name} (in use by '{worktree}')"
+                        ));
                     } else {
-                        branch_items.push(format!("⛅️ {full_remote_name}"));
+                        branch_items.push(format!("{ICON_REMOTE_BRANCH}{full_remote_name}"));
                     }
                     branch_refs.push((branch.clone(), true));
                 }
@@ -633,7 +648,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 println!();
 
                 // Use FuzzySelect for better search experience when there are many branches
-                let selection_result = if branch_items.len() > 5 {
+                let selection_result = if branch_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search branches (fuzzy search enabled):");
                     FuzzySelect::with_theme(&get_theme())
                         .with_prompt("Select a branch")
@@ -677,11 +692,11 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                     .items(&action_options)
                                     .interact_opt()?
                                 {
-                                    Some(0) => {
+                                    Some(ACTION_USE_WORKTREE_NAME) => {
                                         // Use worktree name as new branch name
                                         (Some(selected_branch.clone()), Some(name.clone()))
                                     }
-                                    Some(1) => {
+                                    Some(ACTION_CHANGE_BRANCH_NAME) => {
                                         // Ask for custom branch name
                                         println!();
                                         let new_branch = match input_esc_with_default(
@@ -751,14 +766,14 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                     .items(&action_options)
                                     .interact_opt()?
                                 {
-                                    Some(0) => {
+                                    Some(ACTION_CREATE_NEW_BRANCH) => {
                                         // Create new branch with worktree name
                                         (
                                             Some(format!("{GIT_REMOTE_PREFIX}{selected_branch}")),
                                             Some(name.clone()),
                                         )
                                     }
-                                    Some(1) => {
+                                    Some(ACTION_USE_LOCAL_BRANCH) => {
                                         // Use local branch instead - but check if it's already in use
                                         if let Some(worktree) =
                                             branch_worktree_map.get(selected_branch)
@@ -786,7 +801,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 }
             }
         }
-        2 => {
+        BRANCH_OPTION_SELECT_TAG => {
             // Select tag
             let tags = manager.list_all_tags()?;
             if tags.is_empty() {
@@ -799,15 +814,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                     .map(|(name, message)| {
                         if let Some(msg) = message {
                             // Truncate message to first line for display
-                            let first_line = msg.lines().next().unwrap_or("");
-                            let truncated = if first_line.len() > 50 {
-                                format!("{}...", &first_line[..50])
+                            let first_line = msg.lines().next().unwrap_or(DEFAULT_EMPTY_STRING);
+                            let truncated = if first_line.len() > TAG_MESSAGE_TRUNCATE_LENGTH {
+                                format!("{}...", &first_line[..TAG_MESSAGE_TRUNCATE_LENGTH])
                             } else {
                                 first_line.to_string()
                             };
-                            format!("🏷️  {name} - {truncated}")
+                            format!("{ICON_TAG_INDICATOR}{name} - {truncated}")
                         } else {
-                            format!("🏷️  {name}")
+                            format!("{ICON_TAG_INDICATOR}{name}")
                         }
                     })
                     .collect();
@@ -815,7 +830,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 println!();
 
                 // Use FuzzySelect for better search experience when there are many tags
-                let selection_result = if tag_items.len() > 5 {
+                let selection_result = if tag_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search tags (fuzzy search enabled):");
                     FuzzySelect::with_theme(&get_theme())
                         .with_prompt("Select a tag")
@@ -887,7 +902,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
             .unwrap(),
     );
     pb.set_message("Creating worktree...");
-    pb.enable_steady_tick(Duration::from_millis(100));
+    pb.enable_steady_tick(Duration::from_millis(PROGRESS_BAR_TICK_MILLIS));
 
     let result = if let Some(new_branch) = &new_branch_name {
         // Create worktree with new branch from base branch
@@ -929,7 +944,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
             // Execute post-create hooks
             if let Err(e) = hooks::execute_hooks(
-                "post-create",
+                HOOK_POST_CREATE,
                 &HookContext {
                     worktree_name: name.clone(),
                     worktree_path: path.clone(),
@@ -957,7 +972,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
                 // Execute post-switch hooks
                 if let Err(e) = hooks::execute_hooks(
-                    "post-switch",
+                    HOOK_POST_SWITCH,
                     &HookContext {
                         worktree_name: name,
                         worktree_path: path,
@@ -1118,7 +1133,7 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 
     // Execute pre-remove hooks
     if let Err(e) = hooks::execute_hooks(
-        "pre-remove",
+        HOOK_PRE_REMOVE,
         &HookContext {
             worktree_name: worktree_to_delete.name.clone(),
             worktree_path: worktree_to_delete.path.clone(),
@@ -1276,7 +1291,7 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Execute post-switch hooks
     if let Err(e) = hooks::execute_hooks(
-        "post-switch",
+        HOOK_POST_SWITCH,
         &HookContext {
             worktree_name: selected_worktree.name.clone(),
             worktree_path: selected_worktree.path.clone(),
@@ -1478,7 +1493,7 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
         // Execute pre-remove hooks
         if let Err(e) = hooks::execute_hooks(
-            "pre-remove",
+            HOOK_PRE_REMOVE,
             &HookContext {
                 worktree_name: wt.name.clone(),
                 worktree_path: wt.path.clone(),
@@ -1605,7 +1620,10 @@ fn cleanup_old_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
     println!();
 
     // Get age threshold
-    let _days = match input_esc_with_default("Delete worktrees older than (days)", "30") {
+    let _days = match input_esc_with_default(
+        "Delete worktrees older than (days)",
+        DEFAULT_WORKTREE_CLEANUP_DAYS,
+    ) {
         Some(days_str) => match days_str.parse::<u64>() {
             Ok(d) => d,
             Err(_) => {
@@ -1878,7 +1896,7 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 /// 4. **Hidden files**: Names starting with `.` are not allowed
 /// 5. **Non-ASCII characters**: Names containing non-ASCII characters trigger a warning
 ///    and require user confirmation (interactive mode only)
-/// 6. **Length limit**: Names must not exceed 255 characters
+/// 6. **Length limit**: Names must not exceed MAX_WORKTREE_NAME_LENGTH characters
 ///
 /// # Arguments
 ///
@@ -1924,7 +1942,7 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
 
     // Check for names that could conflict with git internals (case insensitive)
     let name_lower = name.to_lowercase();
-    if name_lower == ".git"
+    if name_lower == GIT_DIR
         || GIT_RESERVED_NAMES
             .iter()
             .any(|&reserved| reserved.to_lowercase() == name_lower)
@@ -1933,7 +1951,7 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
     }
 
     // Check for names starting with dot (hidden files)
-    if name.starts_with('.') {
+    if name.starts_with(CHAR_DOT) {
         return Err(anyhow!("Worktree name cannot start with a dot (.)"));
     }
 
@@ -2092,11 +2110,13 @@ pub fn validate_custom_path(path: &str) -> Result<()> {
                     }
 
                     // Special check for .git paths - only prevent critical Git metadata directories
-                    if name_str == ".git" {
+                    if name_str == GIT_DIR {
                         let components: Vec<_> = path_obj.components().collect();
-                        if components.len() > 1 {
+                        if components.len() > MIN_PATH_COMPONENTS_FOR_SUBDIR {
                             // Check if trying to create in critical Git directories
-                            if let Some(std::path::Component::Normal(next)) = components.get(1) {
+                            if let Some(std::path::Component::Normal(next)) =
+                                components.get(PATH_COMPONENT_SECOND_INDEX)
+                            {
                                 if let Some(next_str) = next.to_str() {
                                     // These directories contain critical Git metadata and should not be used for worktrees
                                     if GIT_CRITICAL_DIRS.contains(&next_str) {
@@ -2272,7 +2292,7 @@ fn find_config_file_path(repo: &git2::Repository) -> Result<std::path::PathBuf> 
                 }
 
                 // If not, check if the main worktree exists
-                let git_path = workdir_path.join(".git");
+                let git_path = workdir_path.join(GIT_DIR);
                 if git_path.is_dir() && workdir_path.exists() {
                     let config_path = workdir_path.join(CONFIG_FILE_NAME);
                     if config_path.exists() {
@@ -2289,7 +2309,7 @@ fn find_config_file_path(repo: &git2::Repository) -> Result<std::path::PathBuf> 
                 {
                     // We're in worktrees subdirectory
                     if let Some(repo_root) = parent.parent() {
-                        if repo_root.join(".git").is_dir() {
+                        if repo_root.join(GIT_DIR).is_dir() {
                             let config_path = repo_root.join(CONFIG_FILE_NAME);
                             if config_path.exists() {
                                 return Ok(config_path);

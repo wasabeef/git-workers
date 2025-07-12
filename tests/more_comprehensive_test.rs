@@ -112,7 +112,7 @@ mod git_tests {
         // Create worktree from existing branch
         let result = manager.create_worktree("remote-work", Some("remote-tracking"));
         if let Err(e) = &result {
-            eprintln!("Failed to create worktree: {}", e);
+            eprintln!("Failed to create worktree: {e}");
         }
         assert!(result.is_ok());
 
@@ -141,7 +141,7 @@ mod config_tests {
             files: Default::default(),
         };
 
-        let debug_str = format!("{:?}", config);
+        let debug_str = format!("{config:?}");
         assert!(debug_str.contains("Config"));
         assert!(debug_str.contains("hooks"));
     }

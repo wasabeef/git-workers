@@ -58,14 +58,14 @@ fn test_menu_item_clone() {
     let item = MenuItem::CreateWorktree;
     let cloned = item;
 
-    assert_eq!(format!("{}", item), format!("{}", cloned));
+    assert_eq!(format!("{item}"), format!("{cloned}"));
 }
 
 #[test]
 fn test_menu_item_debug() {
     // Test Debug implementation
     let item = MenuItem::ListWorktrees;
-    let debug_str = format!("{:?}", item);
+    let debug_str = format!("{item:?}");
     assert_eq!(debug_str, "ListWorktrees");
 }
 

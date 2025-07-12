@@ -14,6 +14,7 @@
 //! - **Standard repositories**: Regular Git repositories without worktrees
 //! - **Non-Git directories**: Fallback for directories outside Git control
 
+use crate::constants::{GIT_COMMONDIR_FILE, MAIN_SUFFIX, UNKNOWN_VALUE};
 use crate::git::GitWorktreeManager;
 use std::env;
 
@@ -41,7 +42,7 @@ pub fn get_repository_info() -> String {
     // Try to get Git repository information
     if let Ok(manager) = GitWorktreeManager::new() {
         let repo = manager.repo();
-        let current_dir = env::current_dir().unwrap_or_else(|_| "unknown".into());
+        let current_dir = env::current_dir().unwrap_or_else(|_| UNKNOWN_VALUE.into());
 
         if repo.is_bare() {
             // For bare repository, show the bare repo name
@@ -50,18 +51,18 @@ pub fn get_repository_info() -> String {
                 .path()
                 .file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or("unknown");
+                .unwrap_or(UNKNOWN_VALUE);
             bare_name.to_string()
         } else {
             // For worktree, get the main repository path from git config
             let worktree_name = current_dir
                 .file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or("unknown");
+                .unwrap_or(UNKNOWN_VALUE);
 
             // Try to get the common directory (parent repository)
             // The commondir file exists in worktrees and points to the main .git directory
-            let commondir_path = repo.path().join("commondir");
+            let commondir_path = repo.path().join(GIT_COMMONDIR_FILE);
             if commondir_path.exists() {
                 // This is a worktree, read the commondir file
                 if let Ok(content) = std::fs::read_to_string(&commondir_path) {
@@ -84,7 +85,7 @@ pub fn get_repository_info() -> String {
                 // The presence of a "worktrees" directory indicates this is a main repo
                 if let Some(repo_path) = repo.workdir() {
                     if let Some(repo_name) = repo_path.file_name().and_then(|name| name.to_str()) {
-                        return format!("{repo_name} (main)");
+                        return format!("{repo_name}{MAIN_SUFFIX}");
                     }
                 }
             }
@@ -96,11 +97,11 @@ pub fn get_repository_info() -> String {
     } else {
         // Not in a git repository
         // Fall back to showing the current directory name
-        let current_dir = env::current_dir().unwrap_or_else(|_| "unknown".into());
+        let current_dir = env::current_dir().unwrap_or_else(|_| UNKNOWN_VALUE.into());
         current_dir
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("unknown")
+            .unwrap_or(UNKNOWN_VALUE)
             .to_string()
     }
 }

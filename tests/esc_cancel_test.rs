@@ -35,8 +35,8 @@ fn test_manual_esc_cancel() {
 
     match result {
         Ok(input) if input.is_empty() => println!("✓ Empty input - treated as cancelled"),
-        Ok(input) => println!("✓ Input received: '{}'", input),
-        Err(e) => println!("✓ ESC pressed or error - correctly cancelled: {}", e),
+        Ok(input) => println!("✓ Input received: '{input}'"),
+        Err(e) => println!("✓ ESC pressed or error - correctly cancelled: {e}"),
     }
 }
 

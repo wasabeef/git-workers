@@ -41,8 +41,14 @@ use std::time::Duration;
 
 use crate::constants::{
     COMMIT_ID_SHORT_LENGTH, DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED,
-    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, GIT_DEFAULT_MAIN_WORKTREE, GIT_REMOTE_PREFIX,
-    LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT,
+    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, ERROR_LOCK_CREATE, ERROR_LOCK_EXISTS,
+    ERROR_NO_PARENT_BARE_REPO, ERROR_NO_PARENT_DIR, ERROR_NO_REPO_DIR, ERROR_NO_REPO_WORKING_DIR,
+    ERROR_NO_WORKING_DIR, ERROR_WORKTREE_CREATE, ERROR_WORKTREE_PATH_EXISTS, GIT_ADD, GIT_BRANCH,
+    GIT_CMD, GIT_DEFAULT_MAIN_WORKTREE, GIT_DIR, GIT_GITDIR_PREFIX, GIT_GITDIR_SUFFIX,
+    GIT_HEAD_INDEX, GIT_OPT_BRANCH, GIT_OPT_GIT_COMMON_DIR, GIT_OPT_RENAME, GIT_ORIGIN,
+    GIT_REFS_REMOTES, GIT_REFS_TAGS, GIT_REPAIR, GIT_RESERVED_NAMES, GIT_REV_PARSE, GIT_WORKTREE,
+    LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT, WINDOW_FIRST_INDEX, WINDOW_SECOND_INDEX,
+    WINDOW_SIZE_PAIRS,
 };
 
 // Create Duration from constant for stale lock timeout
@@ -80,9 +86,9 @@ impl WorktreeLock {
             .open(&lock_path)
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    anyhow!("Another git-workers process is currently creating a worktree. Please wait and try again.")
+                    anyhow!(ERROR_LOCK_EXISTS)
                 } else {
-                    anyhow!("Failed to create lock file: {e}")
+                    anyhow!("{}", ERROR_LOCK_CREATE.replace("{}", &e.to_string()))
                 }
             })?;
 
@@ -134,7 +140,10 @@ fn find_common_parent(worktrees: &[WorktreeInfo]) -> Option<PathBuf> {
         .collect();
 
     // Check if all parent directories are the same
-    if parent_dirs.windows(2).all(|w| w[0] == w[1]) {
+    if parent_dirs
+        .windows(WINDOW_SIZE_PAIRS)
+        .all(|w| w[WINDOW_FIRST_INDEX] == w[WINDOW_SECOND_INDEX])
+    {
         parent_dirs.first().cloned()
     } else {
         None
@@ -214,13 +223,13 @@ impl GitWorktreeManager {
     ///
     /// Returns an error if the repository has no working directory
     /// (should not happen in practice)
-    fn get_git_dir(&self) -> Result<&Path> {
+    pub fn get_git_dir(&self) -> Result<&Path> {
         if self.repo.is_bare() {
             Ok(self.repo.path())
         } else {
             self.repo
                 .workdir()
-                .ok_or_else(|| anyhow!("No working directory"))
+                .ok_or_else(|| anyhow!(ERROR_NO_WORKING_DIR))
         }
     }
 
@@ -248,14 +257,14 @@ impl GitWorktreeManager {
             self.repo
                 .path()
                 .parent()
-                .ok_or_else(|| anyhow!("Cannot find parent directory of bare repository"))
+                .ok_or_else(|| anyhow!(ERROR_NO_PARENT_BARE_REPO))
                 .map(|p| p.to_path_buf())
         } else {
             self.repo
                 .workdir()
-                .ok_or_else(|| anyhow!("Cannot find repository working directory"))?
+                .ok_or_else(|| anyhow!(ERROR_NO_REPO_WORKING_DIR))?
                 .parent()
-                .ok_or_else(|| anyhow!("Cannot find parent directory"))
+                .ok_or_else(|| anyhow!(ERROR_NO_PARENT_DIR))
                 .map(|p| p.to_path_buf())
         }
     }
@@ -383,9 +392,12 @@ impl GitWorktreeManager {
         let head = worktree_repo.head()?;
 
         if head.is_branch() {
-            Ok(head.shorthand().unwrap_or("unknown").to_string())
+            Ok(head
+                .shorthand()
+                .unwrap_or(DEFAULT_BRANCH_UNKNOWN)
+                .to_string())
         } else {
-            Ok("detached".to_string())
+            Ok(DEFAULT_BRANCH_DETACHED.to_string())
         }
     }
 
@@ -456,7 +468,7 @@ impl GitWorktreeManager {
                 .repo
                 .workdir()
                 .or_else(|| self.repo.path().parent())
-                .ok_or_else(|| anyhow!("Cannot determine repository directory"))?;
+                .ok_or_else(|| anyhow!(ERROR_NO_REPO_DIR))?;
             repo_dir.join(name)
         } else if name.contains('/') {
             // Name includes a path pattern (e.g., "worktrees/feature")
@@ -475,8 +487,8 @@ impl GitWorktreeManager {
 
         if worktree_path.exists() {
             return Err(anyhow!(
-                "Worktree path already exists: {}",
-                worktree_path.display()
+                "{}",
+                ERROR_WORKTREE_PATH_EXISTS.replace("{}", &worktree_path.display().to_string())
             ));
         }
 
@@ -571,7 +583,7 @@ impl GitWorktreeManager {
                 .repo
                 .workdir()
                 .or_else(|| self.repo.path().parent())
-                .ok_or_else(|| anyhow!("Cannot determine repository directory"))?;
+                .ok_or_else(|| anyhow!(ERROR_NO_REPO_DIR))?;
             repo_dir.join(name)
         } else if name.contains('/') {
             let repo_dir = self.repo.workdir().unwrap_or_else(|| self.repo.path());
@@ -587,8 +599,8 @@ impl GitWorktreeManager {
 
         if worktree_path.exists() {
             return Err(anyhow!(
-                "Worktree path already exists: {}",
-                worktree_path.display()
+                "{}",
+                ERROR_WORKTREE_PATH_EXISTS.replace("{}", &worktree_path.display().to_string())
             ));
         }
 
@@ -613,11 +625,11 @@ impl GitWorktreeManager {
 
         // Use git CLI to create worktree with new branch
         use std::process::Command;
-        let output = Command::new("git")
+        let output = Command::new(GIT_CMD)
             .current_dir(self.get_git_dir()?)
-            .arg("worktree")
-            .arg("add")
-            .arg("-b")
+            .arg(GIT_WORKTREE)
+            .arg(GIT_ADD)
+            .arg(GIT_OPT_BRANCH)
             .arg(new_branch)
             .arg(&canonical_path)
             .arg(base_branch)
@@ -625,8 +637,8 @@ impl GitWorktreeManager {
 
         if !output.status.success() {
             return Err(anyhow!(
-                "Failed to create worktree: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "{}",
+                ERROR_WORKTREE_CREATE.replace("{}", &String::from_utf8_lossy(&output.stderr))
             ));
         }
 
@@ -766,24 +778,25 @@ impl GitWorktreeManager {
     fn create_worktree_with_branch(&self, path: &Path, branch_name: &str) -> Result<PathBuf> {
         use std::process::Command;
 
-        let mut cmd = Command::new("git");
+        let mut cmd = Command::new(GIT_CMD);
         cmd.current_dir(self.get_git_dir()?);
 
         // Check if this is a tag reference
         if self
             .repo
-            .find_reference(&format!("refs/tags/{branch_name}"))
+            .find_reference(&format!("{GIT_REFS_TAGS}{branch_name}"))
             .is_ok()
         {
             // For tags, we need to create a detached HEAD worktree
             // git worktree add <path> <tag>
-            cmd.arg("worktree").arg("add").arg(path).arg(branch_name);
-        } else if branch_name.starts_with(GIT_REMOTE_PREFIX) {
+            cmd.arg(GIT_WORKTREE)
+                .arg(GIT_ADD)
+                .arg(path)
+                .arg(branch_name);
+        } else if branch_name.starts_with(GIT_ORIGIN) {
             // For remote branches, we need to create a local branch
             // Extract the branch name without "origin/" prefix
-            let local_branch_name = branch_name
-                .strip_prefix(GIT_REMOTE_PREFIX)
-                .unwrap_or(branch_name);
+            let local_branch_name = branch_name.strip_prefix(GIT_ORIGIN).unwrap_or(branch_name);
 
             // Check if a local branch with this name already exists
             let local_exists = self
@@ -803,9 +816,9 @@ impl GitWorktreeManager {
                 ));
             } else {
                 // Create new local branch from remote
-                cmd.arg("worktree")
-                    .arg("add")
-                    .arg("-b")
+                cmd.arg(GIT_WORKTREE)
+                    .arg(GIT_ADD)
+                    .arg(GIT_OPT_BRANCH)
                     .arg(local_branch_name)
                     .arg(path)
                     .arg(branch_name);
@@ -819,12 +832,15 @@ impl GitWorktreeManager {
 
             if branch_exists {
                 // If branch exists, create worktree pointing to that branch
-                cmd.arg("worktree").arg("add").arg(path).arg(branch_name);
+                cmd.arg(GIT_WORKTREE)
+                    .arg(GIT_ADD)
+                    .arg(path)
+                    .arg(branch_name);
             } else {
                 // If branch doesn't exist, create new branch with worktree
-                cmd.arg("worktree")
-                    .arg("add")
-                    .arg("-b")
+                cmd.arg(GIT_WORKTREE)
+                    .arg(GIT_ADD)
+                    .arg(GIT_OPT_BRANCH)
                     .arg(branch_name)
                     .arg(path);
             }
@@ -834,8 +850,8 @@ impl GitWorktreeManager {
 
         if !output.status.success() {
             return Err(anyhow!(
-                "Failed to create worktree: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "{}",
+                ERROR_WORKTREE_CREATE.replace("{}", &String::from_utf8_lossy(&output.stderr))
             ));
         }
 
@@ -891,17 +907,17 @@ impl GitWorktreeManager {
 
         // For both bare and non-bare repositories, use git command without specifying HEAD
         // This will create a new branch with the worktree name automatically
-        let output = Command::new("git")
+        let output = Command::new(GIT_CMD)
             .current_dir(self.get_git_dir()?)
-            .arg("worktree")
-            .arg("add")
+            .arg(GIT_WORKTREE)
+            .arg(GIT_ADD)
             .arg(&absolute_path)
             .output()?;
 
         if !output.status.success() {
             return Err(anyhow!(
-                "Failed to create worktree: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "{}",
+                ERROR_WORKTREE_CREATE.replace("{}", &String::from_utf8_lossy(&output.stderr))
             ));
         }
 
@@ -982,9 +998,9 @@ impl GitWorktreeManager {
         for (branch, _) in remote_iter.flatten() {
             if let Some(name) = branch.name()? {
                 // Remove "origin/" prefix for cleaner display
-                let clean_name = name.strip_prefix(GIT_REMOTE_PREFIX).unwrap_or(name);
+                let clean_name = name.strip_prefix(GIT_ORIGIN).unwrap_or(name);
                 // Skip HEAD references
-                if clean_name != "HEAD" {
+                if clean_name != GIT_RESERVED_NAMES[GIT_HEAD_INDEX] {
                     remote_branches.push(clean_name.to_string());
                 }
             }
@@ -1032,7 +1048,7 @@ impl GitWorktreeManager {
             if let Ok(name_str) = std::str::from_utf8(name) {
                 // Remove refs/tags/ prefix
                 let tag_name = name_str
-                    .strip_prefix("refs/tags/")
+                    .strip_prefix(GIT_REFS_TAGS)
                     .unwrap_or(name_str)
                     .to_string();
 
@@ -1144,10 +1160,10 @@ impl GitWorktreeManager {
         use std::process::Command;
 
         // Use git CLI for more robust branch renaming
-        let output = Command::new("git")
+        let output = Command::new(GIT_CMD)
             .current_dir(self.get_git_dir()?)
-            .arg("branch")
-            .arg("-m")
+            .arg(GIT_BRANCH)
+            .arg(GIT_OPT_RENAME)
             .arg(old_name)
             .arg(new_name)
             .output()?;
@@ -1302,10 +1318,10 @@ impl GitWorktreeManager {
 
         // Step 2: Rename the git metadata directory
         // Use git rev-parse to find the common git directory
-        let output = Command::new("git")
+        let output = Command::new(GIT_CMD)
             .current_dir(self.get_git_dir()?)
-            .arg("rev-parse")
-            .arg("--git-common-dir")
+            .arg(GIT_REV_PARSE)
+            .arg(GIT_OPT_GIT_COMMON_DIR)
             .output()?;
 
         let git_common_dir = if output.status.success() {
@@ -1330,24 +1346,24 @@ impl GitWorktreeManager {
             let gitdir_file = new_worktree_git_dir.join("gitdir");
             if gitdir_file.exists() {
                 let new_path_str = new_path.display();
-                fs::write(&gitdir_file, format!("{new_path_str}/.git\n"))?;
+                fs::write(&gitdir_file, format!("{new_path_str}{GIT_GITDIR_SUFFIX}"))?;
             }
         }
 
         // Step 3: Update the .git file in the worktree
-        let git_file_path = new_path.join(".git");
+        let git_file_path = new_path.join(GIT_DIR);
         if git_file_path.exists() {
             let git_dir_str = new_worktree_git_dir.display();
-            let git_file_content = format!("gitdir: {git_dir_str}\n");
+            let git_file_content = format!("{GIT_GITDIR_PREFIX}{git_dir_str}\n");
             fs::write(&git_file_path, git_file_content)?;
         }
 
         // Step 4: Run git worktree repair to update Git's internal tracking
         // Note: This won't rename the worktree in Git's tracking, but will ensure
         // the paths are correct
-        let repair_output = Command::new("git")
+        let repair_output = Command::new(GIT_CMD)
             .current_dir(self.get_git_dir()?)
-            .args(["worktree", "repair"])
+            .args([GIT_WORKTREE, GIT_REPAIR])
             .output()?;
 
         if !repair_output.status.success() {
@@ -1391,8 +1407,8 @@ impl GitWorktreeManager {
         let branch_name = head.shorthand().ok_or_else(|| anyhow!("No branch name"))?;
 
         // Try to find upstream branch
-        let upstream_name = format!("origin/{branch_name}");
-        if let Ok(upstream) = repo.find_reference(&format!("refs/remotes/{upstream_name}")) {
+        let upstream_name = format!("{GIT_ORIGIN}{branch_name}");
+        if let Ok(upstream) = repo.find_reference(&format!("{GIT_REFS_REMOTES}{upstream_name}")) {
             let upstream_oid = upstream.target().ok_or_else(|| anyhow!("No target"))?;
             let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
             Ok((ahead, behind))

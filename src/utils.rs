@@ -12,10 +12,7 @@
 //! - **Line Overwriting**: Progress messages can be overwritten by results
 //! - **Immediate Feedback**: All output is flushed immediately
 
-use crate::constants::{
-    DEFAULT_BRANCH_MAIN, DEFAULT_BRANCH_MASTER, MSG_PRESS_ANY_KEY, MSG_SWITCH_FILE_WARNING_PREFIX,
-    SWITCH_TO_PREFIX,
-};
+use crate::constants::*;
 use colored::*;
 use console::Term;
 use dialoguer::theme::ColorfulTheme;
@@ -42,7 +39,7 @@ use std::path::{Path, PathBuf};
 /// // Then call print_success or print_error to overwrite
 /// ```
 pub fn print_progress(message: &str) {
-    let spinner = "⏳".yellow();
+    let spinner = ICON_SPINNER.yellow();
     print!("{spinner} {message}");
     io::stdout().flush().unwrap();
 }
@@ -67,7 +64,7 @@ pub fn print_progress(message: &str) {
 /// print_success("Worktree created successfully!");
 /// ```
 pub fn print_success(message: &str) {
-    let checkmark = "✓".green();
+    let checkmark = ICON_SUCCESS.green();
     println!("\r{checkmark} {message}");
 }
 
@@ -90,7 +87,7 @@ pub fn print_success(message: &str) {
 /// print_error("Failed to create worktree: permission denied");
 /// ```
 pub fn print_error(message: &str) {
-    let cross = "✗".red();
+    let cross = ICON_ERROR.red();
     println!("\r{cross} {message}");
 }
 
@@ -111,7 +108,7 @@ pub fn print_error(message: &str) {
 /// print_warning("Hook execution failed: command not found");
 /// ```
 pub fn print_warning(message: &str) {
-    let warning = "⚠".yellow();
+    let warning = ICON_WARNING.yellow();
     println!("{warning} {message}");
 }
 
@@ -128,9 +125,9 @@ pub fn print_warning(message: &str) {
 pub fn get_terminal() -> Term {
     let term = Term::stderr();
     if !term.is_term() {
-        eprintln!("Error: git-workers requires a terminal environment.");
-        eprintln!("Non-interactive environments are not supported.");
-        std::process::exit(1);
+        eprintln!("{ERROR_TERMINAL_REQUIRED}");
+        eprintln!("{ERROR_NON_INTERACTIVE}");
+        std::process::exit(EXIT_FAILURE);
     }
     term
 }
@@ -214,7 +211,7 @@ pub fn press_any_key_to_continue() -> io::Result<()> {
 /// write_switch_path(worktree_path);
 /// ```
 pub fn write_switch_path(path: &std::path::Path) {
-    if let Ok(switch_file) = std::env::var("GW_SWITCH_FILE") {
+    if let Ok(switch_file) = std::env::var(ENV_GW_SWITCH_FILE) {
         if let Err(e) = std::fs::write(&switch_file, path.display().to_string()) {
             eprintln!("{MSG_SWITCH_FILE_WARNING_PREFIX}{e}");
         }

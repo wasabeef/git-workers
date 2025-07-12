@@ -64,8 +64,8 @@ fn test_esc_key_handling() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    println!("STDOUT:\n{}", stdout);
-    println!("STDERR:\n{}", stderr);
+    println!("STDOUT:\n{stdout}");
+    println!("STDERR:\n{stderr}");
 
     // Confirm that it was cancelled with ESC key
     assert!(stdout.contains("Operation cancelled") || stderr.contains("Operation cancelled"));
@@ -130,8 +130,8 @@ fn test_search_esc_handling() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    println!("STDOUT:\n{}", stdout);
-    println!("STDERR:\n{}", stderr);
+    println!("STDOUT:\n{stdout}");
+    println!("STDERR:\n{stderr}");
 
     // Confirm that it was cancelled with ESC key
     assert!(stdout.contains("Search cancelled") || stderr.contains("Search cancelled"));

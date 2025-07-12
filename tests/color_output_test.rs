@@ -65,7 +65,7 @@ fn test_input_handling_dialoguer() -> Result<()> {
 fn test_shell_integration_marker() -> Result<()> {
     // Test that SWITCH_TO marker is correctly formatted
     let test_path = "/Users/test/project/branch/feature";
-    let marker = format!("SWITCH_TO:{}", test_path);
+    let marker = format!("SWITCH_TO:{test_path}");
 
     assert_eq!(marker, "SWITCH_TO:/Users/test/project/branch/feature");
 
@@ -95,7 +95,7 @@ fn test_menu_icon_alignment() -> Result<()> {
     ];
 
     for (item, expected) in items {
-        let display = format!("{}", item);
+        let display = format!("{item}");
         assert_eq!(display, expected);
     }
 

@@ -204,8 +204,7 @@ fn test_create_worktree_error_on_existing_worktree() -> Result<()> {
             || error_msg.contains("File exists")
             || error_msg.contains("is not an empty directory")
             || error_msg.contains("already registered"),
-        "Expected error about existing path, got: {}",
-        error_msg
+        "Expected error about existing path, got: {error_msg}"
     );
 
     Ok(())
