@@ -162,7 +162,7 @@ fn test_worktree_pattern_detection() -> Result<()> {
     let pattern = detect_worktree_pattern(&direct_worktrees);
     // For path /project/feature-a where name is feature-a, it should be Direct
     if let WorktreePattern::InSubDir(dir) = &pattern {
-        panic!("Expected Direct, got InSubDir({})", dir);
+        panic!("Expected Direct, got InSubDir({dir})");
     }
     assert!(matches!(pattern, WorktreePattern::Direct));
 

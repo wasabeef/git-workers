@@ -41,8 +41,8 @@ fn test_menu_items() {
 
     // Test that all items can be displayed
     for item in &items {
-        let display = format!("{}", item);
-        let debug = format!("{:?}", item);
+        let display = format!("{item}");
+        let debug = format!("{item:?}");
 
         assert!(!display.is_empty());
         assert!(!debug.is_empty());

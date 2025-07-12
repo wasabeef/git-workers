@@ -405,10 +405,7 @@ fn test_get_git_dir() -> Result<()> {
 
     assert!(
         actual_git_dir == repo_canonical || actual_git_dir == git_dir_canonical,
-        "git_dir should be either repository root ({:?}) or .git directory ({:?}), got: {:?}",
-        repo_canonical,
-        git_dir_canonical,
-        actual_git_dir
+        "git_dir should be either repository root ({repo_canonical:?}) or .git directory ({git_dir_canonical:?}), got: {actual_git_dir:?}"
     );
 
     Ok(())

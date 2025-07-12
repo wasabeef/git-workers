@@ -229,35 +229,35 @@ fn test_commands_stability() -> Result<()> {
     let result = commands::list_worktrees();
     match result {
         Ok(_) => println!("  ✓ list_worktrees succeeded"),
-        Err(e) => println!("  ! list_worktrees failed with: {}", e),
+        Err(e) => println!("  ! list_worktrees failed with: {e}"),
     }
 
     println!("Testing command: delete_worktree");
     let result = commands::delete_worktree();
     match result {
         Ok(_) => println!("  ✓ delete_worktree succeeded"),
-        Err(e) => println!("  ! delete_worktree failed with: {}", e),
+        Err(e) => println!("  ! delete_worktree failed with: {e}"),
     }
 
     println!("Testing command: batch_delete_worktrees");
     let result = commands::batch_delete_worktrees();
     match result {
         Ok(_) => println!("  ✓ batch_delete_worktrees succeeded"),
-        Err(e) => println!("  ! batch_delete_worktrees failed with: {}", e),
+        Err(e) => println!("  ! batch_delete_worktrees failed with: {e}"),
     }
 
     println!("Testing command: cleanup_old_worktrees");
     let result = commands::cleanup_old_worktrees();
     match result {
         Ok(_) => println!("  ✓ cleanup_old_worktrees succeeded"),
-        Err(e) => println!("  ! cleanup_old_worktrees failed with: {}", e),
+        Err(e) => println!("  ! cleanup_old_worktrees failed with: {e}"),
     }
 
     println!("Testing command: rename_worktree");
     let result = commands::rename_worktree();
     match result {
         Ok(_) => println!("  ✓ rename_worktree succeeded"),
-        Err(e) => println!("  ! rename_worktree failed with: {}", e),
+        Err(e) => println!("  ! rename_worktree failed with: {e}"),
     }
 
     std::env::set_current_dir(original_dir)?;
@@ -293,7 +293,7 @@ fn test_repository_states() -> Result<()> {
         ("main-only", &repo2_path),
         ("multi-branch", &repo3_path),
     ] {
-        println!("Testing in {} repository", name);
+        println!("Testing in {name} repository");
         std::env::set_current_dir(path)?;
 
         let result = commands::list_worktrees();

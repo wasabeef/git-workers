@@ -53,9 +53,9 @@ fn test_print_with_colors() {
     let error_msg = "Colored error".red();
     let progress_msg = "Colored progress".yellow();
 
-    print_success(&format!("{}", success_msg));
-    print_error(&format!("{}", error_msg));
-    print_progress(&format!("{}", progress_msg));
+    print_success(&format!("{success_msg}"));
+    print_error(&format!("{error_msg}"));
+    print_progress(&format!("{progress_msg}"));
 }
 
 #[test]

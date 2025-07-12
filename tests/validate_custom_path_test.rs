@@ -14,12 +14,12 @@ fn test_validate_custom_path_valid_paths() -> Result<()> {
     ];
 
     for case in test_cases {
-        println!("Testing: '{}'", case);
+        println!("Testing: '{case}'");
         match validate_custom_path(case) {
             Ok(_) => println!("  ✓ Valid"),
             Err(e) => {
-                println!("  ✗ Error: {}", e);
-                panic!("Expected '{}' to be valid", case);
+                println!("  ✗ Error: {e}");
+                panic!("Expected '{case}' to be valid");
             }
         }
     }
@@ -59,7 +59,7 @@ fn test_validate_custom_path_invalid_characters() -> Result<()> {
     let invalid_chars = vec!['<', '>', ':', '"', '|', '?', '*'];
 
     for char in invalid_chars {
-        let path = format!("test{}path", char);
+        let path = format!("test{char}path");
         let result = validate_custom_path(&path);
         assert!(result.is_err());
         assert!(result
@@ -136,7 +136,7 @@ fn test_validate_custom_path_path_traversal() -> Result<()> {
 fn test_validate_custom_path_reserved_names() -> Result<()> {
     for name in GIT_RESERVED_NAMES {
         // Test reserved name as path component
-        let path = format!("test/{}/worktree", name);
+        let path = format!("test/{name}/worktree");
         let result = validate_custom_path(&path);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("reserved by git"));

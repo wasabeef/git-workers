@@ -27,9 +27,7 @@ fn test_application_metadata_comprehensive() {
         let numeric_part = part.split('-').next().unwrap();
         assert!(
             numeric_part.chars().all(|c| c.is_ascii_digit()),
-            "Version part {} '{}' should be numeric",
-            i,
-            numeric_part
+            "Version part {i} '{numeric_part}' should be numeric"
         );
     }
 
@@ -138,7 +136,7 @@ fn test_menu_system_comprehensive() {
     // Verify all items have unique display strings
     let mut display_strings = Vec::new();
     for item in &all_items {
-        let display = format!("{}", item);
+        let display = format!("{item}");
         assert!(!display.is_empty());
         assert!(!display_strings.contains(&display));
         display_strings.push(display);
@@ -146,19 +144,19 @@ fn test_menu_system_comprehensive() {
 
     // Test debug representation
     for item in &all_items {
-        let debug = format!("{:?}", item);
+        let debug = format!("{item:?}");
         assert!(!debug.is_empty());
         assert!(debug.is_ascii());
     }
 
     // Test specific menu item content
-    let list_display = format!("{}", MenuItem::ListWorktrees);
+    let list_display = MenuItem::ListWorktrees.to_string();
     assert!(list_display.to_lowercase().contains("list"));
 
-    let create_display = format!("{}", MenuItem::CreateWorktree);
+    let create_display = MenuItem::CreateWorktree.to_string();
     assert!(create_display.to_lowercase().contains("create"));
 
-    let exit_display = format!("{}", MenuItem::Exit);
+    let exit_display = MenuItem::Exit.to_string();
     assert!(exit_display.to_lowercase().contains("exit"));
 }
 

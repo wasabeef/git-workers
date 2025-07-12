@@ -63,7 +63,7 @@ fn test_comprehensive_validation() -> Result<()> {
 
     for name in valid_names {
         let result = validate_worktree_name(name);
-        assert!(result.is_ok(), "Valid name should pass: {}", name);
+        assert!(result.is_ok(), "Valid name should pass: {name}");
         assert_eq!(result.unwrap(), name.trim());
     }
 
@@ -80,7 +80,7 @@ fn test_comprehensive_validation() -> Result<()> {
 
     for path in valid_paths {
         let result = validate_custom_path(path);
-        assert!(result.is_ok(), "Valid path should pass: {}", path);
+        assert!(result.is_ok(), "Valid path should pass: {path}");
     }
 
     Ok(())
@@ -179,8 +179,7 @@ fn test_validation_trimming() -> Result<()> {
         let result = validate_worktree_name(input)?;
         assert_eq!(
             result, expected,
-            "Trimming should work correctly for: {:?}",
-            input
+            "Trimming should work correctly for: {input:?}"
         );
     }
 
@@ -201,6 +200,6 @@ fn test_validation_ascii_only() {
 
     for name in ascii_names {
         let result = validate_worktree_name(name);
-        assert!(result.is_ok(), "ASCII name should be valid: {}", name);
+        assert!(result.is_ok(), "ASCII name should be valid: {name}");
     }
 }

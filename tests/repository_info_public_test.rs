@@ -100,7 +100,7 @@ fn test_get_repository_info_custom_names() -> Result<()> {
 
     for (i, project_name) in special_names.iter().enumerate() {
         // Use a unique subdirectory for each test to avoid conflicts
-        let test_dir = temp_dir.path().join(format!("test{}", i));
+        let test_dir = temp_dir.path().join(format!("test{i}"));
         fs::create_dir(&test_dir)?;
 
         let repo_path = test_dir.join(project_name);
@@ -118,9 +118,7 @@ fn test_get_repository_info_custom_names() -> Result<()> {
         // Verify the info contains expected name or equals it
         assert!(
             info == *project_name || info.contains(project_name),
-            "Failed for project: {}, got: {}",
-            project_name,
-            info
+            "Failed for project: {project_name}, got: {info}"
         );
     }
 
@@ -235,7 +233,7 @@ fn test_get_repository_info_bare_with_extension() -> Result<()> {
 
         let info = get_repository_info();
 
-        assert_eq!(info, bare_name, "Failed for bare repo: {}", bare_name);
+        assert_eq!(info, bare_name, "Failed for bare repo: {bare_name}");
     }
 
     Ok(())
@@ -355,8 +353,7 @@ fn test_get_repository_info_unicode() -> Result<()> {
         let info = get_repository_info();
         assert_eq!(
             info, unicode_name,
-            "Failed for Unicode name: {}",
-            unicode_name
+            "Failed for Unicode name: {unicode_name}"
         );
     }
 
@@ -385,8 +382,7 @@ fn test_get_repository_info_spaces() -> Result<()> {
         let info = get_repository_info();
         assert_eq!(
             info, space_name,
-            "Failed for name with spaces: {}",
-            space_name
+            "Failed for name with spaces: {space_name}"
         );
     }
 
@@ -408,7 +404,7 @@ fn test_get_repository_info_deep_structure() -> Result<()> {
     // Create deep directory structure
     let mut deep_path = repo_path.clone();
     for i in 0..10 {
-        deep_path = deep_path.join(format!("level{}", i));
+        deep_path = deep_path.join(format!("level{i}"));
         fs::create_dir(&deep_path)?;
     }
 

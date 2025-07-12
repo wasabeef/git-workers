@@ -45,7 +45,7 @@ fn test_ui_components() {
 
     // Test column formatting
     let name = "test-worktree";
-    let padded_name = format!("{:<width$}", name, width = UI_NAME_COL_MIN_WIDTH);
+    let padded_name = format!("{name:<UI_NAME_COL_MIN_WIDTH$}");
     assert!(padded_name.len() >= name.len());
 }
 

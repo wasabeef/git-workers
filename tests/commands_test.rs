@@ -196,7 +196,7 @@ fn test_delete_branch_success() -> Result<()> {
     // Delete the branch
     let result = manager.delete_branch("test-branch");
     if let Err(e) = &result {
-        eprintln!("Failed to delete branch: {}", e);
+        eprintln!("Failed to delete branch: {e}");
 
         // Check current branch
         let head = repo.head()?;

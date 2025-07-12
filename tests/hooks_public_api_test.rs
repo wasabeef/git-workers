@@ -379,8 +379,7 @@ custom-hook = ["echo 'custom hook'"]
         let result = execute_hooks(hook_type, &context);
         assert!(
             result.is_ok(),
-            "Execute hooks should succeed for hook type: {}",
-            hook_type
+            "Execute hooks should succeed for hook type: {hook_type}"
         );
     }
 

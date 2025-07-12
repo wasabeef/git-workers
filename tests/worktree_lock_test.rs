@@ -36,7 +36,7 @@ fn setup_test_repo() -> Result<(TempDir, GitWorktreeManager)> {
         head.shorthand().unwrap_or("main")
     };
 
-    eprintln!("Created test repo with default branch: {}", branch_name);
+    eprintln!("Created test repo with default branch: {branch_name}");
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;
     Ok((parent_dir, manager))
@@ -122,18 +122,18 @@ fn test_lock_with_new_branch() -> Result<()> {
     let head = repo.head()?;
     let base_branch = head.shorthand().unwrap_or("main");
 
-    eprintln!("Using base branch: {}", base_branch);
+    eprintln!("Using base branch: {base_branch}");
 
     // Test that lock works with create_worktree_with_new_branch
     let result =
         manager.create_worktree_with_new_branch("feature-worktree", "feature-branch", base_branch);
 
     if let Err(ref e) = result {
-        eprintln!("Error in test_lock_with_new_branch: {}", e);
+        eprintln!("Error in test_lock_with_new_branch: {e}");
         eprintln!("Error chain:");
         let mut current_error = e.source();
         while let Some(source) = current_error {
-            eprintln!("  Caused by: {}", source);
+            eprintln!("  Caused by: {source}");
             current_error = source.source();
         }
     }
@@ -159,7 +159,7 @@ fn test_manual_concurrent_lock_demo() -> Result<()> {
     println!("Attempting to create worktree (should fail)...");
     match manager.create_worktree("worktree1", None) {
         Ok(_) => println!("Worktree created (lock was removed as stale)"),
-        Err(e) => println!("Failed as expected: {}", e),
+        Err(e) => println!("Failed as expected: {e}"),
     }
 
     println!("Removing lock file...");
@@ -168,7 +168,7 @@ fn test_manual_concurrent_lock_demo() -> Result<()> {
     println!("Attempting to create worktree again (should succeed)...");
     match manager.create_worktree("worktree1", None) {
         Ok(_) => println!("Worktree created successfully"),
-        Err(e) => println!("Unexpected error: {}", e),
+        Err(e) => println!("Unexpected error: {e}"),
     }
 
     Ok(())

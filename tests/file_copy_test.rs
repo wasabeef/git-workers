@@ -321,7 +321,7 @@ fn test_path_traversal_detailed() -> Result<()> {
         };
 
         let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
-        assert_eq!(copied.len(), 0, "Path '{}' should not be copied", path);
+        assert_eq!(copied.len(), 0, "Path '{path}' should not be copied");
     }
 
     Ok(())
@@ -500,7 +500,7 @@ fn test_special_filenames() -> Result<()> {
     ];
 
     for name in &special_names {
-        fs::write(repo_path.join(name), format!("content of {}", name))?;
+        fs::write(repo_path.join(name), format!("content of {name}"))?;
     }
 
     // Create worktrees directory
@@ -535,8 +535,7 @@ fn test_special_filenames() -> Result<()> {
     for name in &special_names {
         assert!(
             worktree_path.join(name).exists(),
-            "File {} should exist",
-            name
+            "File {name} should exist"
         );
     }
 

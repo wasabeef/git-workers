@@ -72,7 +72,7 @@ fn test_prompt_formatting_logic() {
 
     // Test basic prompt construction
     let prompt = "Enter worktree name";
-    let formatted_prompt = format!("{} {} ", ICON_QUESTION, prompt);
+    let formatted_prompt = format!("{ICON_QUESTION} {prompt} ");
 
     assert!(formatted_prompt.contains(ICON_QUESTION));
     assert!(formatted_prompt.contains(prompt));
@@ -84,7 +84,7 @@ fn test_prompt_formatting_logic() {
     assert_eq!(formatted_default, "[default-name]");
 
     // Test complete prompt with default
-    let complete_prompt = format!("{} {} {} ", ICON_QUESTION, prompt, formatted_default);
+    let complete_prompt = format!("{ICON_QUESTION} {prompt} {formatted_default} ");
     assert!(complete_prompt.contains(ICON_QUESTION));
     assert!(complete_prompt.contains(prompt));
     assert!(complete_prompt.contains("[default-name]"));
@@ -247,7 +247,7 @@ fn test_prompt_display_logic() {
 
     // Test prompt without default
     let prompt = "Enter value";
-    let formatted = format!("{} {} ", ICON_QUESTION, prompt);
+    let formatted = format!("{ICON_QUESTION} {prompt} ");
 
     assert!(formatted.starts_with(ICON_QUESTION));
     assert!(formatted.contains(prompt));
@@ -255,7 +255,7 @@ fn test_prompt_display_logic() {
 
     // Test prompt with default
     let default_text = FORMAT_DEFAULT_VALUE.replace("{}", "test-default");
-    let with_default = format!("{} {} {} ", ICON_QUESTION, prompt, default_text);
+    let with_default = format!("{ICON_QUESTION} {prompt} {default_text} ");
 
     assert!(with_default.contains(ICON_QUESTION));
     assert!(with_default.contains(prompt));
@@ -263,7 +263,7 @@ fn test_prompt_display_logic() {
 
     // Test empty prompt handling
     let empty_prompt = "";
-    let formatted_empty = format!("{} {} ", ICON_QUESTION, empty_prompt);
+    let formatted_empty = format!("{ICON_QUESTION} {empty_prompt} ");
     assert!(formatted_empty.contains(ICON_QUESTION));
 }
 
@@ -282,10 +282,8 @@ fn test_redraw_logic() {
     let question_mark = ICON_QUESTION;
     let default_formatted = FORMAT_DEFAULT_VALUE.replace("{}", default);
 
-    let full_redraw = format!(
-        "{}{}  {} {} {}",
-        clear_sequence, question_mark, prompt, default_formatted, buffer
-    );
+    let full_redraw =
+        format!("{clear_sequence}{question_mark}  {prompt} {default_formatted} {buffer}");
 
     assert!(full_redraw.contains(clear_sequence));
     assert!(full_redraw.contains(question_mark));

@@ -88,11 +88,11 @@ fn test_menu_item_coverage() {
 
     // Test that each item can be formatted
     for item in all_items {
-        let display_str = format!("{}", item);
+        let display_str = format!("{item}");
         assert!(!display_str.is_empty());
 
         // Test debug format
-        let debug_str = format!("{:?}", item);
+        let debug_str = format!("{item:?}");
         assert!(!debug_str.is_empty());
     }
 }

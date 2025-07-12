@@ -78,19 +78,19 @@ fn test_validate_worktree_name_non_ascii_interactive() -> Result<()> {
 
     // Japanese characters
     let result = commands::validate_worktree_name("日本語-ブランチ");
-    println!("Japanese name result: {:?}", result);
+    println!("Japanese name result: {result:?}");
 
     // Chinese characters
     let result = commands::validate_worktree_name("中文-分支");
-    println!("Chinese name result: {:?}", result);
+    println!("Chinese name result: {result:?}");
 
     // Emoji
     let result = commands::validate_worktree_name("feature-🚀-rocket");
-    println!("Emoji name result: {:?}", result);
+    println!("Emoji name result: {result:?}");
 
     // Mixed ASCII and non-ASCII
     let result = commands::validate_worktree_name("feature-テスト-123");
-    println!("Mixed name result: {:?}", result);
+    println!("Mixed name result: {result:?}");
 
     Ok(())
 }

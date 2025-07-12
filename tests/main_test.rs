@@ -275,15 +275,13 @@ fn test_main_display_constants() {
         PROMPT_ACTION.contains("would")
             || PROMPT_ACTION.contains("like")
             || PROMPT_ACTION.contains("do"),
-        "Action prompt should be a question about what to do: {}",
-        PROMPT_ACTION
+        "Action prompt should be a question about what to do: {PROMPT_ACTION}"
     );
     assert!(
         INFO_EXITING.contains("Exit")
             || INFO_EXITING.contains("exit")
             || INFO_EXITING.contains("Workers"),
-        "Exit message should mention exiting: {}",
-        INFO_EXITING
+        "Exit message should mention exiting: {INFO_EXITING}"
     );
 }
 
@@ -371,13 +369,11 @@ fn test_menu_item_display() {
         let display = item.to_string();
         assert!(
             !display.is_empty(),
-            "Menu item display should not be empty: {:?}",
-            item
+            "Menu item display should not be empty: {item:?}"
         );
         assert!(
             display.len() > 2,
-            "Menu item display should be descriptive: {}",
-            display
+            "Menu item display should be descriptive: {display}"
         );
     }
 
@@ -411,17 +407,14 @@ fn test_version_string_format() {
     let parts: Vec<&str> = version.split('.').collect();
     assert!(
         parts.len() >= 2,
-        "Version should have at least major.minor: {}",
-        version
+        "Version should have at least major.minor: {version}"
     );
 
     // Each part should be numeric (at least for the first two)
     for (i, part) in parts.iter().take(2).enumerate() {
         assert!(
             part.parse::<u32>().is_ok(),
-            "Version part {} should be numeric: {}",
-            i,
-            part
+            "Version part {i} should be numeric: {part}"
         );
     }
 }
