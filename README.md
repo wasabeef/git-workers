@@ -28,9 +28,18 @@ https://github.com/user-attachments/assets/fb5f0213-4a9f-43e2-9557-416070d7e122
 brew install wasabeef/gw-tap/gw
 ```
 
+### Build from Source
+
+```bash
+# Clone and install
+git clone https://github.com/wasabeef/git-workers.git
+cd git-workers
+cargo install --path .
+```
+
 ### Shell Integration
 
-To enable automatic directory switching when switching worktrees, add this to your shell config:
+Add this to your shell config(.bashrc or .zshrc) to enable automatic directory switching when switching worktrees.
 
 ```bash
 # For bash (~/.bashrc) or zsh (~/.zshrc)
@@ -193,3 +202,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built with [git2](https://github.com/rust-lang/git2-rs) for Git operations
 - Uses [dialoguer](https://github.com/console-rs/dialoguer) for interactive prompts
 - Terminal styling with [colored](https://github.com/colored-rs/colored)
+
