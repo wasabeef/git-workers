@@ -16,7 +16,7 @@
     "watch": "cargo watch -x run"
   },
   "devDependencies": {
-    "lefthook": "^1.10.0",
-    "prettier": "^3.6.1"
+    "lefthook": "^1.12.2",
+    "prettier": "^3.6.2"
   }
 }

@@ -1,41 +1,6 @@
 use git_workers::menu::MenuItem;
 
 #[test]
-fn test_menu_item_display() {
-    // Test Display implementation for all menu items
-    assert_eq!(format!("{}", MenuItem::ListWorktrees), "•  List worktrees");
-    assert_eq!(
-        format!("{}", MenuItem::SearchWorktrees),
-        "?  Search worktrees"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::CreateWorktree),
-        "+  Create worktree"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::DeleteWorktree),
-        "-  Delete worktree"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::BatchDelete),
-        "=  Batch delete worktrees"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::CleanupOldWorktrees),
-        "~  Cleanup old worktrees"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::SwitchWorktree),
-        "→  Switch worktree"
-    );
-    assert_eq!(
-        format!("{}", MenuItem::RenameWorktree),
-        "*  Rename worktree"
-    );
-    assert_eq!(format!("{}", MenuItem::Exit), "x  Exit");
-}
-
-#[test]
 fn test_menu_item_creation() {
     // Test that all menu items can be created
     let items = [

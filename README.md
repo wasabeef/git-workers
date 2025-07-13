@@ -202,4 +202,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built with [git2](https://github.com/rust-lang/git2-rs) for Git operations
 - Uses [dialoguer](https://github.com/console-rs/dialoguer) for interactive prompts
 - Terminal styling with [colored](https://github.com/colored-rs/colored)
-
