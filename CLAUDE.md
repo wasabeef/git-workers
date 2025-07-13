@@ -324,19 +324,90 @@ Added comprehensive validation for user-specified worktree paths:
 
 **Solution**: Convert relative paths to absolute paths before passing them to the git command, ensuring consistent behavior regardless of the working directory.
 
-## Test Coverage
+## Test Coverage and CI Integration
 
-The following test files have been added/updated for v0.3.0:
+### Test File Consolidation (v0.5.1+)
 
-- `tests/worktree_path_test.rs`: 10 tests for path resolution edge cases
-- `tests/create_worktree_integration_test.rs`: 5 integration tests including bare repository scenarios
-- `tests/worktree_commands_test.rs`: 3 new tests for HEAD creation patterns
-- `tests/validate_worktree_name_test.rs`: 7 tests for name validation including edge cases
-- `tests/file_copy_size_test.rs`: 6 tests for file size limits and copying behavior
-- `tests/worktree_lock_test.rs`: 5 tests for concurrent access control
-- `tests/validate_custom_path_test.rs`: 9 tests for custom path validation including security checks
-- Enhanced `tests/create_worktree_integration_test.rs`: 2 additional tests for custom path creation
-- `tests/create_worktree_from_tag_test.rs`: 3 tests for tag functionality:
-  - `test_list_all_tags`: Tests tag listing with both lightweight and annotated tags
-  - `test_create_worktree_from_tag`: Tests creating worktree from tag with new branch
-  - `test_create_worktree_from_tag_detached`: Tests creating detached HEAD worktree from tag
+Major test restructuring completed to improve maintainability and reduce duplication:
+
+- **File Reduction**: Consolidated from 64 to 40 test files
+- **Unified Structure**: Created `unified_*_comprehensive_test.rs` files grouping related functionality
+- **Duplication Removal**: Eliminated 15+ duplicate test cases
+- **Comment Translation**: Converted all Japanese comments to English for consistency
+
+### CI/CD Configuration
+
+**GitHub Actions Workflows:**
+
+- `.github/workflows/ci.yml`: Comprehensive test, lint, build, and coverage analysis
+- `.github/workflows/release.yml`: Automated releases with Homebrew tap updates
+
+**Pre-commit Hooks (lefthook.yml):**
+
+```yaml
+pre-commit:
+  parallel: false
+  commands:
+    fmt:
+      glob: '*.rs'
+      run: cargo fmt --all
+      stage_fixed: true
+    clippy:
+      glob: '*.rs'
+      run: cargo clippy --all-targets --all-features -- -D warnings
+```
+
+**Test Configuration:**
+
+- Single-threaded execution (`--test-threads=1`) to prevent race conditions
+- CI environment variable automatically set for non-interactive test execution
+- Coverage analysis with `cargo-tarpaulin` including proper concurrency control
+
+### Package Management Integration
+
+**Bun Integration (package.json):**
+
+```json
+{
+  "scripts": {
+    "test": "bun ./scripts/run-tests.js",
+    "format": "cargo fmt --all && prettier --write .",
+    "lint": "cargo clippy --all-targets --all-features -- -D warnings",
+    "check": "bun run format && bun run lint && bun run test"
+  }
+}
+```
+
+**Test Runner Scripts:**
+
+- `scripts/run-tests.js`: Bun-compatible test wrapper with proper exit handling
+- `scripts/test.sh`: Bash fallback for direct cargo test execution
+
+### Test Structure
+
+**Unified Test Files (40 total):**
+
+- `unified_*_comprehensive_test.rs`: Consolidated functionality tests
+- `api_contract_basic_test.rs`: Contract-based testing
+- Security, edge cases, and integration tests with proper error handling
+
+**Coverage Analysis:**
+
+- Single-threaded execution prevents worktree lock conflicts
+- Directory restoration with fallback handling for CI environments
+- Error handling for temporary directory cleanup
+
+### Test Execution Best Practices
+
+- Use `CI=true` environment variable for non-interactive execution
+- Single-threaded execution prevents resource conflicts
+- Comprehensive error handling for CI environment limitations
+- Automated cleanup of temporary files and directories
+
+### Legacy Test Files (Pre-consolidation)
+
+The following test files were consolidated into unified versions:
+
+- Individual component tests → `unified_*_comprehensive_test.rs`
+- Duplicate functionality tests → Removed
+- Japanese comments → Translated to English

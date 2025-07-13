@@ -44,6 +44,7 @@ cobertura.xml
 perf.data
 perf.data.old
 flamegraph.svg
+*.profraw
 
 # Documentation
 /target/doc/
@@ -54,3 +55,12 @@ flamegraph.svg
 # Environment files
 .env
 .env.local
+
+# Test refactoring artifacts
+TEST_REFACTORING_PLAN.md
+DELETE_LOG.md
+IMPLEMENTATION_COMPLETE.md
+*_CONSOLIDATION_LOG.md
+analysis_results/
+backup_phase*/
+scripts/

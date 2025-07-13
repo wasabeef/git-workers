@@ -47,6 +47,7 @@ pub mod config;
 pub mod constants;
 pub mod file_copy;
 pub mod git;
+pub mod git_interface;
 pub mod hooks;
 pub mod input_esc_raw;
 pub mod menu;
