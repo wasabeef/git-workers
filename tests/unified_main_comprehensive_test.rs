@@ -95,8 +95,11 @@ fn test_main_outside_git_repo() {
     // Should either succeed or fail gracefully, not panic
     assert!(result.is_ok() || result.is_err());
 
-    // Restore directory safely
-    let _ = std::env::set_current_dir(original_dir);
+    // Restore directory safely with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
 }
 
 /// Test main application in empty repository
@@ -127,8 +130,11 @@ fn test_main_empty_repository() -> Result<()> {
     // Should handle empty repo gracefully
     assert!(result.is_ok() || result.is_err());
 
-    // Restore directory safely
-    let _ = std::env::set_current_dir(original_dir);
+    // Restore directory safely with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
     Ok(())
 }
 

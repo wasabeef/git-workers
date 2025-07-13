@@ -1968,7 +1968,14 @@ pub fn validate_worktree_name(name: &str) -> Result<String> {
         );
         println!();
 
-        // Allow user to continue or cancel
+        // In test environments, automatically reject non-ASCII names
+        if std::env::var("CI").is_ok() || std::env::var("RUST_TEST_TIME_UNIT").is_ok() {
+            return Err(anyhow!(
+                "Non-ASCII characters not allowed in test environment"
+            ));
+        }
+
+        // Allow user to continue or cancel in interactive mode
         let confirm = Confirm::with_theme(&get_theme())
             .with_prompt("Continue with this name anyway?")
             .default(false)

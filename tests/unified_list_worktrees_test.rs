@@ -105,8 +105,11 @@ fn test_list_worktrees_standalone_function() -> Result<()> {
     // Test standalone list_worktrees function
     let worktrees_result = list_worktrees();
 
-    // Restore original directory
-    std::env::set_current_dir(original_dir)?;
+    // Restore original directory with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
 
     // Verify result (success if not error)
     let worktrees = worktrees_result?;

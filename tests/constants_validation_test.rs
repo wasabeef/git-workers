@@ -23,12 +23,15 @@ fn test_section_header_format_stability() {
         "Number of lines differs from expected"
     );
 
-    // Verify specific format
+    // Verify specific format (accounting for ANSI color codes)
     let lines: Vec<&str> = result.lines().collect();
-    assert_eq!(lines[0], "Test", "Title line format has been changed");
     assert!(
-        lines[1].starts_with("="),
-        "Separator line does not start with '='"
+        lines[0].contains("Test"),
+        "Title line should contain 'Test'"
+    );
+    assert!(
+        lines[1].starts_with("\u{1b}[") || lines[1].starts_with("="),
+        "Separator line should start with ANSI code or '='"
     );
 }
 

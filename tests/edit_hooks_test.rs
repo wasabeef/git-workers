@@ -92,8 +92,11 @@ post-create = ["echo 'Config from main'"]
     assert!(config.hooks.contains_key("post-create"));
     assert_eq!(config.hooks["post-create"], vec!["echo 'Config from main'"]);
 
-    // Restore directory
-    std::env::set_current_dir(original_dir)?;
+    // Restore directory with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
 
     Ok(())
 }
@@ -141,8 +144,11 @@ post-create = ["echo 'Config in bare repo worktree'"]
         vec!["echo 'Config in bare repo worktree'"]
     );
 
-    // Restore directory
-    std::env::set_current_dir(original_dir)?;
+    // Restore directory with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
 
     Ok(())
 }
@@ -199,8 +205,11 @@ post-create = ["echo 'From subdirectory'"]
     let config = Config::load()?;
     assert_eq!(config.hooks["post-create"], vec!["echo 'From root'"]);
 
-    // Restore directory
-    std::env::set_current_dir(original_dir)?;
+    // Restore directory with fallback to temp_dir if original is not accessible
+    if std::env::set_current_dir(&original_dir).is_err() {
+        // If we can't go back to original, at least go to a valid directory
+        let _ = std::env::set_current_dir(temp_dir.path());
+    }
 
     Ok(())
 }

@@ -550,8 +550,11 @@ fn test_git_operations_outside_repo() {
         let result = GitWorktreeManager::new();
         assert!(result.is_err());
 
-        // Restore directory
-        let _ = std::env::set_current_dir(original_dir);
+        // Restore directory with fallback to temp_dir if original is not accessible
+        if std::env::set_current_dir(&original_dir).is_err() {
+            // If we can't go back to original, at least go to a valid directory
+            let _ = std::env::set_current_dir(temp_dir.path());
+        }
     } else {
         // If we can't change directory, skip this test
         println!("Could not change to non-repo directory, skipping test");

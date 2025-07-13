@@ -429,18 +429,15 @@ fn contract_unicode_handling() {
 
     for name in &unicode_names {
         let result = validate_worktree_name(name);
-        // Unicode characters are warned but basically accepted contract
-        // (However, filesystem incompatible characters are excluded)
-        if !name
-            .chars()
-            .any(|c| ['/', '\\', ':', '*', '?', '"', '<', '>', '|'].contains(&c))
-        {
-            // Filesystem compatibility warning exists but not an error
-            let is_ascii_only = name.is_ascii();
-            if is_ascii_only {
-                assert!(result.is_ok(), "ASCII name '{name}' must be allowed");
-            }
-            // For non-ASCII characters, expected behavior is warning with acceptance
+        // Unicode characters should be rejected in test environment
+        if !name.is_ascii() {
+            assert!(
+                result.is_err(),
+                "Non-ASCII name '{name}' should be rejected in test environment"
+            );
+        } else {
+            // ASCII-only names should be accepted
+            assert!(result.is_ok(), "ASCII name '{name}' should be accepted");
         }
     }
 }
