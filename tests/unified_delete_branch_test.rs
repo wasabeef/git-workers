@@ -60,6 +60,19 @@ fn test_delete_branch_with_checkout() -> Result<()> {
     let repo_path = temp_dir.path().join("test-repo");
 
     let repo = Repository::init(&repo_path)?;
+
+    // Configure the repository to use 'main' as default branch
+    std::process::Command::new("git")
+        .args(["config", "init.defaultBranch", "main"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Create main branch explicitly
+    std::process::Command::new("git")
+        .args(["checkout", "-b", "main"])
+        .current_dir(&repo_path)
+        .output()?;
+
     create_initial_commit(&repo)?;
 
     // Create and switch to a new branch using git command
@@ -68,7 +81,7 @@ fn test_delete_branch_with_checkout() -> Result<()> {
         .current_dir(&repo_path)
         .output()?;
 
-    // Switch back to main
+    // Switch back to main branch
     Command::new("git")
         .args(["checkout", "main"])
         .current_dir(&repo_path)
@@ -78,6 +91,9 @@ fn test_delete_branch_with_checkout() -> Result<()> {
 
     // Delete the branch
     let result = manager.delete_branch("to-delete");
+    if let Err(e) = &result {
+        eprintln!("Delete branch failed: {e}");
+    }
     assert!(result.is_ok());
 
     // Verify branch is deleted
