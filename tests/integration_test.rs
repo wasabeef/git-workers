@@ -44,7 +44,7 @@ fn test_esc_key_handling() {
     let stdin = child.stdin.as_mut().expect("Failed to get stdin");
 
     // 1. Select Create worktree (4th item)
-    stdin.write_all(b"\x1b[B\x1b[B\x1b[B\r").unwrap(); // 下矢印3回 + Enter
+    stdin.write_all(b"\x1b[B\x1b[B\x1b[B\r").unwrap(); // Down arrow 3 times + Enter
 
     // 2. Send ESC key to cancel
     stdin.write_all(b"\x1b").unwrap(); // ESC
@@ -52,7 +52,7 @@ fn test_esc_key_handling() {
     // 3. Select Exit
     stdin
         .write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
-        .unwrap(); // 下矢印5回 + Enter
+        .unwrap(); // Down arrow 5 times + Enter
 
     stdin.flush().unwrap();
     let _ = stdin;
@@ -110,7 +110,7 @@ fn test_search_esc_handling() {
     let stdin = child.stdin.as_mut().expect("Failed to get stdin");
 
     // 1. Select Search worktrees (3rd item)
-    stdin.write_all(b"\x1b[B\x1b[B\r").unwrap(); // 下矢印2回 + Enter
+    stdin.write_all(b"\x1b[B\x1b[B\r").unwrap(); // Down arrow 2 times + Enter
 
     // 2. Send ESC key to cancel
     stdin.write_all(b"\x1b").unwrap(); // ESC
@@ -118,7 +118,7 @@ fn test_search_esc_handling() {
     // 3. Select Exit
     stdin
         .write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
-        .unwrap(); // 下矢印6回 + Enter
+        .unwrap(); // Down arrow 6 times + Enter
 
     stdin.flush().unwrap();
     let _ = stdin;
