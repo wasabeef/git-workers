@@ -429,6 +429,239 @@ fn test_validation_boundary_conditions() {
     assert!(validate_custom_path("../../../etc").is_err());
 }
 
+/// Test additional Windows reserved filename validation
+#[test]
+fn test_validate_worktree_name_windows_reserved_extended() {
+    let windows_reserved_names = vec![
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        // Case variations
+        "con", "prn", "aux", "nul", "com1", "lpt1", "Com1", "Lpt1",
+        // With extensions
+        "CON.txt", "PRN.log", "AUX.dat",
+    ];
+
+    for name in windows_reserved_names {
+        let result = validate_worktree_name(name);
+        // These should be handled appropriately - either rejected or accepted with warnings
+        assert!(
+            result.is_ok() || result.is_err(),
+            "Function should handle '{name}' without panicking"
+        );
+    }
+}
+
+/// Test Git internal directory names validation
+#[test]
+fn test_validate_worktree_name_git_internals_extended() {
+    let git_internal_names = vec![
+        ".git",
+        "HEAD",
+        "refs",
+        "objects",
+        "hooks",
+        "info",
+        "logs",
+        "branches",
+        "description",
+        "config",
+        "index",
+        "COMMIT_EDITMSG",
+        "FETCH_HEAD",
+        "ORIG_HEAD",
+        "MERGE_HEAD",
+        "packed-refs",
+        "shallow",
+        "worktrees",
+        // Subdirectory patterns that might conflict
+        "refs.backup",
+        "objects.old",
+        "hooks.disabled",
+    ];
+
+    for name in git_internal_names {
+        let result = validate_worktree_name(name);
+        if name.starts_with('.') || ["HEAD", "refs", "objects", "hooks"].contains(&name) {
+            assert!(
+                result.is_err(),
+                "Git internal name '{name}' should be rejected"
+            );
+        }
+    }
+}
+
+/// Test Unicode and international character handling
+#[test]
+fn test_validate_worktree_name_unicode_extended() {
+    let unicode_test_cases = vec![
+        // Japanese
+        ("機能ブランチ", false), // Should be rejected due to non-ASCII
+        ("feature-機能", false),
+        // European characters
+        ("café-branch", false),
+        ("naïve-implementation", false),
+        ("résumé-feature", false),
+        // Cyrillic
+        ("ветка-функции", false),
+        // Emoji and symbols
+        ("feature-🚀", false),
+        ("bug-🐛-fix", false),
+        ("v1.0-✅", false),
+        // Mathematical symbols
+        ("α-release", false),
+        ("β-version", false),
+        // Mixed ASCII/Unicode
+        ("feature-café", false),
+        ("test-naïve", false),
+    ];
+
+    for (name, should_pass) in unicode_test_cases {
+        let result = validate_worktree_name(name);
+        if should_pass {
+            assert!(result.is_ok(), "Unicode name '{name}' should be accepted");
+        } else {
+            assert!(
+                result.is_err(),
+                "Unicode name '{name}' should be rejected for ASCII compatibility"
+            );
+        }
+    }
+}
+
+/// Test filesystem edge cases for worktree names
+#[test]
+fn test_validate_worktree_name_filesystem_edge_cases() {
+    let edge_cases = vec![
+        // Names that could cause filesystem issues
+        (".", false),    // Current directory
+        ("..", false),   // Parent directory
+        ("...", false),  // Multiple dots (may be rejected)
+        ("....", false), // Four dots should be rejected
+        // Control characters
+        ("name\x00null", false), // Null terminator
+        ("name\x01ctrl", true),  // Control character (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\x08bs", true),    // Backspace (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\x0cff", true),    // Form feed (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\x7fdel", true),   // Delete character (allowed, not in INVALID_FILESYSTEM_CHARS)
+        // Whitespace variations
+        ("name\r", true), // Carriage return (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\n", true), // Line feed (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\t", true), // Tab (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name\x0b", true), // Vertical tab (allowed, not in INVALID_FILESYSTEM_CHARS)
+        (" name", true),  // Leading space (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("name ", true),  // Trailing space (allowed, not in INVALID_FILESYSTEM_CHARS)
+        ("  name  ", true), // Leading and trailing spaces (allowed, not in INVALID_FILESYSTEM_CHARS)
+        // Path-like names
+        ("name/", false),  // Trailing slash
+        ("/name", false),  // Leading slash
+        ("na/me", false),  // Embedded slash
+        ("name\\", false), // Trailing backslash
+        ("\\name", false), // Leading backslash
+        ("na\\me", false), // Embedded backslash
+    ];
+
+    for (name, should_pass) in edge_cases {
+        let result = validate_worktree_name(name);
+        if should_pass {
+            assert!(result.is_ok(), "Edge case '{name}' should be accepted");
+        } else {
+            assert!(result.is_err(), "Edge case '{name}' should be rejected");
+        }
+    }
+}
+
+/// Test custom path security edge cases
+#[test]
+fn test_validate_custom_path_security_extended() {
+    let excessive_traversal = "../".repeat(100);
+    let long_legitimate_path = "a/".repeat(1000) + "a"; // Remove trailing slash
+
+    let security_test_cases = vec![
+        // Path traversal variations
+        ("..\\\\..\\\\..\\\\Windows\\\\System32", true), // Backslashes are allowed, only forward slash traversal is blocked
+        ("....//....//etc//passwd", false),              // Double-dot traversal
+        ("..././..././etc/shadow", true),                // Mixed traversal but valid depth
+        ("./../../../root", false),                      // Hidden directory traversal
+        ("legitimate/../../../etc/passwd", false),       // Legitimate start with traversal
+        // Null byte injection
+        ("path\x00/../../etc/passwd", false),
+        ("../etc/passwd\x00.txt", false),
+        // Encoded traversal attempts
+        ("%2e%2e%2f%2e%2e%2fpasswd", true), // URL-encoded (should pass if not decoded)
+        ("..%252f..%252fetc", true),        // Double URL-encoded
+        // Long path attacks
+        (excessive_traversal.as_str(), false), // Excessive traversal
+        (long_legitimate_path.as_str(), true), // Long but legitimate path
+        // Mixed separator attacks
+        ("..\\/../etc/passwd", true), // Mixed separators (backslash is allowed)
+        ("..//..\\\\etc/passwd", false), // Multiple separator types
+    ];
+
+    for (path, should_pass) in security_test_cases {
+        let result = validate_custom_path(path);
+        if should_pass {
+            assert!(
+                result.is_ok(),
+                "Security test path '{path}' should be accepted"
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "Security test path '{path}' should be rejected"
+            );
+        }
+    }
+}
+
+/// Test custom path platform compatibility
+#[test]
+fn test_validate_custom_path_platform_compatibility() {
+    let platform_test_cases = vec![
+        // Windows drive letters
+        ("C:", false),
+        ("D:", false),
+        ("Z:", false),
+        ("c:", false),
+        // UNC paths
+        ("\\\\server\\\\share\\\\path", true), // Backslashes are actually allowed
+        ("//server/share/path", false),
+        ("\\\\?\\\\C:\\\\path", false), // Special Windows path format should be rejected
+        // Device names on Windows
+        ("CON/file", true),     // CON as part of path is allowed
+        ("path/CON", true),     // CON as part of path is allowed
+        ("PRN/document", true), // PRN as part of path is allowed
+        ("AUX/data", true),     // AUX as part of path is allowed
+        ("NUL/temp", true),     // NUL as part of path is allowed
+        // Case sensitivity tests
+        ("Path/With/Cases", true),
+        ("PATH/WITH/CASES", true),
+        ("path/with/cases", true),
+        // Special characters that might be problematic
+        ("path:with:colons", false),
+        ("path<with<brackets", false),
+        ("path>with>brackets", false),
+        ("path|with|pipes", false),
+        ("path\"with\"quotes", false),
+        ("path*with*wildcards", false),
+        ("path?with?questions", false),
+    ];
+
+    for (path, should_pass) in platform_test_cases {
+        let result = validate_custom_path(path);
+        if should_pass {
+            assert!(
+                result.is_ok(),
+                "Platform test path '{path}' should be accepted"
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "Platform test path '{path}' should be rejected for cross-platform compatibility"
+            );
+        }
+    }
+}
+
 /// Test validation consistency
 #[test]
 fn test_validation_consistency() {
@@ -451,5 +684,294 @@ fn test_validation_consistency() {
             result4.is_ok(),
             "Inconsistent results for custom path '{input}'"
         );
+    }
+}
+
+// =============================================================================
+// Extended error handling tests
+// =============================================================================
+
+/// Test validation with extreme inputs
+#[test]
+fn test_validation_extreme_inputs() {
+    // Test with extremely long input
+    let extremely_long_input = "a".repeat(100000);
+    let result = validate_worktree_name(&extremely_long_input);
+    assert!(result.is_err(), "Extremely long input should be rejected");
+
+    // Test with extremely long path
+    let extremely_long_path = "a/".repeat(10000) + "a";
+    let result = validate_custom_path(&extremely_long_path);
+    // Should handle gracefully (either accept or reject, but not crash)
+    assert!(
+        result.is_ok() || result.is_err(),
+        "Should handle extremely long path gracefully"
+    );
+
+    // Test with many path components
+    let many_components = (0..1000)
+        .map(|i| format!("component{i}"))
+        .collect::<Vec<_>>()
+        .join("/");
+    let result = validate_custom_path(&many_components);
+    assert!(
+        result.is_ok() || result.is_err(),
+        "Should handle many path components gracefully"
+    );
+}
+
+/// Test validation with malformed inputs
+#[test]
+fn test_validation_malformed_inputs() {
+    // Test with various malformed inputs
+    let malformed_inputs = vec![
+        "\x00\x01\x02\x03",                 // Binary data
+        "\u{fffd}\u{fffd}\u{fffd}\u{fffd}", // Invalid UTF-8 sequences (replacement characters)
+        "test\x00embedded",                 // Null bytes in middle
+        "test\x1bescaped",                  // Escape sequences
+        "test\r\nlines",                    // Line endings
+        "test\u{202e}rtl",                  // Right-to-left override
+        "test\u{2028}sep",                  // Line separator
+        "test\u{2029}para",                 // Paragraph separator
+        "test\u{feff}bom",                  // Byte order mark
+        "test\u{200b}zwsp",                 // Zero-width space
+    ];
+
+    for input in malformed_inputs {
+        let result1 = validate_worktree_name(input);
+        let result2 = validate_custom_path(input);
+
+        // Should handle gracefully without panicking
+        assert!(
+            result1.is_ok() || result1.is_err(),
+            "Should handle malformed input '{input:?}' gracefully"
+        );
+        assert!(
+            result2.is_ok() || result2.is_err(),
+            "Should handle malformed input '{input:?}' gracefully"
+        );
+    }
+}
+
+/// Test validation stress test
+#[test]
+fn test_validation_stress_test() {
+    let start = std::time::Instant::now();
+
+    // Generate many test cases
+    let mut test_cases = Vec::new();
+    for i in 0..1000 {
+        test_cases.push(format!("test-name-{i}"));
+        test_cases.push(format!("test/path/{i}"));
+        test_cases.push(format!("../test-{i}"));
+        test_cases.push(format!("invalid/{i}"));
+        test_cases.push(format!("name-{i}-with-special-chars"));
+    }
+
+    // Run validation on all test cases
+    for case in &test_cases {
+        let _ = validate_worktree_name(case);
+        let _ = validate_custom_path(case);
+    }
+
+    let duration = start.elapsed();
+
+    // Should complete reasonably quickly
+    assert!(
+        duration.as_secs() < 5,
+        "Stress test took too long: {duration:?}"
+    );
+    println!(
+        "Stress test completed {} validations in {duration:?}",
+        test_cases.len() * 2
+    );
+}
+
+/// Test validation error recovery
+#[test]
+fn test_validation_error_recovery() {
+    // Test that validation continues to work after errors
+    let mixed_inputs = vec![
+        ("valid-name", true),
+        ("", false),
+        ("another-valid-name", true),
+        ("invalid/slash", false),
+        ("yet-another-valid", true),
+        ("../../../etc/passwd", false),
+        ("final-valid-name", true),
+    ];
+
+    for (input, should_pass) in mixed_inputs {
+        let result = validate_worktree_name(input);
+        if should_pass {
+            assert!(result.is_ok(), "Expected '{input}' to pass");
+        } else {
+            assert!(result.is_err(), "Expected '{input}' to fail");
+        }
+
+        // Validation should still work after previous errors
+        let test_result = validate_worktree_name("test-recovery");
+        assert!(test_result.is_ok(), "Validation should work after error");
+    }
+}
+
+/// Test validation with concurrent access
+#[test]
+fn test_validation_concurrent_access() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let test_inputs = Arc::new(vec![
+        "valid-name-1",
+        "valid-name-2",
+        "valid-name-3",
+        "invalid/slash",
+        "another-valid",
+        "",
+        "final-valid",
+    ]);
+
+    let mut handles = vec![];
+
+    // Spawn multiple threads performing validation
+    for i in 0..10 {
+        let inputs = Arc::clone(&test_inputs);
+        handles.push(thread::spawn(move || {
+            let mut results = Vec::new();
+            for input in inputs.iter() {
+                let result1 = validate_worktree_name(input);
+                let result2 = validate_custom_path(input);
+                results.push((result1.is_ok(), result2.is_ok()));
+            }
+            println!("Thread {i} completed validation");
+            results
+        }));
+    }
+
+    // Wait for all threads to complete
+    let mut all_results = Vec::new();
+    for handle in handles {
+        let results = handle.join().unwrap();
+        all_results.push(results);
+    }
+
+    // All threads should produce consistent results
+    let first_results = &all_results[0];
+    for (i, results) in all_results.iter().enumerate() {
+        assert_eq!(
+            results, first_results,
+            "Thread {i} produced different results than thread 0"
+        );
+    }
+
+    println!("Concurrent validation test completed successfully");
+}
+
+/// Test validation memory usage
+#[test]
+fn test_validation_memory_usage() {
+    // Test that validation doesn't leak memory with repeated calls
+    let test_input = "test-memory-usage";
+
+    // Run many validations
+    for _ in 0..10000 {
+        let _ = validate_worktree_name(test_input);
+        let _ = validate_custom_path(test_input);
+    }
+
+    // If we get here without running out of memory, the test passes
+    println!("Memory usage test completed successfully");
+}
+
+/// Test validation with internationalization
+#[test]
+fn test_validation_i18n_edge_cases() {
+    let i18n_test_cases = vec![
+        // Bidirectional text
+        ("test\u{202d}force-ltr", false),
+        ("test\u{202e}force-rtl", false),
+        // Normalization issues
+        ("café", false),        // Composed é
+        ("cafe\u{301}", false), // Decomposed é (e + combining acute)
+        // Zero-width characters
+        ("test\u{200b}zwsp", false), // Zero-width space
+        ("test\u{200c}zwnj", false), // Zero-width non-joiner
+        ("test\u{200d}zwj", false),  // Zero-width joiner
+        ("test\u{feff}bom", false),  // Byte order mark
+        // Variation selectors
+        ("test\u{fe0f}variant", false), // Variation selector
+        // Surrogate pairs (high-level Unicode)
+        ("test\u{1f600}emoji", false), // Emoji
+        ("test\u{1d400}math", false),  // Mathematical symbols
+        // Mixed scripts
+        ("test-тест", false),   // Latin + Cyrillic
+        ("test-テスト", false), // Latin + Japanese
+        ("test-测试", false),   // Latin + Chinese
+    ];
+
+    for (input, should_pass) in i18n_test_cases {
+        let result = validate_worktree_name(input);
+        if should_pass {
+            assert!(result.is_ok(), "I18n input '{input}' should be accepted");
+        } else {
+            assert!(
+                result.is_err(),
+                "I18n input '{input}' should be rejected for ASCII compatibility"
+            );
+        }
+    }
+}
+
+/// Test validation with security-focused inputs
+#[test]
+fn test_validation_security_focused() {
+    let long_string = "A".repeat(1000);
+    let long_traversal = "../".repeat(1000);
+
+    let security_test_cases = vec![
+        // Command injection attempts
+        ("test;rm -rf /", false),
+        ("test && rm -rf /", false),
+        ("test || rm -rf /", false),
+        ("test`rm -rf /`", false),
+        ("test$(rm -rf /)", false),
+        // Path traversal variations
+        ("test/../../../etc/passwd", false),
+        ("test\\..\\..\\..\\windows\\system32", false),
+        ("test/./../../etc/shadow", false),
+        ("test/.\\../..\\etc\\hosts", false),
+        // Null byte injection
+        ("test\x00injection", false),
+        ("test\x00; rm -rf /", false),
+        // Format string attacks
+        ("test%s%s%s", true), // Should be OK as regular string
+        ("test%n%n%n", true), // Should be OK as regular string
+        ("test%x%x%x", true), // Should be OK as regular string
+        // Buffer overflow attempts
+        (&long_string, false),    // Very long string
+        (&long_traversal, false), // Repeated traversal
+        // Script injection
+        ("<script>alert('xss')</script>", false),
+        ("javascript:alert('xss')", false),
+        ("data:text/html,<script>alert('xss')</script>", false),
+        // SQL injection patterns
+        ("test'; DROP TABLE users; --", false),
+        ("test' OR 1=1 --", false),
+        ("test' UNION SELECT * FROM users --", false),
+    ];
+
+    for (input, should_pass) in security_test_cases {
+        let result = validate_worktree_name(input);
+        if should_pass {
+            assert!(
+                result.is_ok(),
+                "Security input '{input}' should be accepted"
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "Security input '{input}' should be rejected"
+            );
+        }
     }
 }

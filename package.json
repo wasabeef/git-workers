@@ -11,6 +11,8 @@
     "format": "cargo fmt --all && prettier --write .",
     "lint": "cargo clippy --all-targets --all-features -- -D warnings",
     "test": "CI=true cargo test --tests --all-features -- --test-threads=1",
+    "test:report": "cargo tarpaulin --out Html --ignore-tests --exclude-files '*/tests/*' --skip-clean -- --skip test_repository_permission_errors",
+    "test:report:open": "open tarpaulin-report.html",
     "check": "bun run format && bun run lint && bun run test",
     "build": "cargo build --release",
     "dev": "cargo run",

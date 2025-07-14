@@ -40,7 +40,6 @@ use anyhow::Result;
 use clap::Parser;
 use colored::*;
 use console::Term;
-use dialoguer::Select;
 use std::env;
 use std::io::{self, Write};
 
@@ -48,17 +47,20 @@ mod commands;
 mod config;
 mod constants;
 mod file_copy;
+mod filesystem;
 mod git;
+mod git_interface;
 mod hooks;
 mod input_esc_raw;
 mod menu;
 mod repository_info;
+mod ui;
 mod utils;
 
 use constants::header_separator;
 use menu::MenuItem;
 use repository_info::get_repository_info;
-use utils::get_theme;
+use ui::{DialoguerUI, UserInterface};
 
 /// Command-line arguments for Git Workers
 ///
@@ -160,14 +162,10 @@ fn main() -> Result<()> {
         let display_items: Vec<String> = menu_items.iter().map(|item| item.to_string()).collect();
 
         // Show menu with List worktrees as default selection
-        let selection = match Select::with_theme(&get_theme())
-            .with_prompt(constants::PROMPT_ACTION)
-            .items(&display_items)
-            .default(0) // Set List worktrees (index 0) as default
-            .interact_opt()?
-        {
-            Some(selection) => selection,
-            None => {
+        let ui = DialoguerUI;
+        let selection = match ui.select(constants::PROMPT_ACTION, &display_items) {
+            Ok(selection) => selection,
+            Err(_) => {
                 // User pressed ESC - exit cleanly
                 clear_screen(&term);
                 let exit_msg = constants::INFO_EXITING.bright_black();
