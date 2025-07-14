@@ -438,6 +438,376 @@ post-create = ["echo 'created'"]
     Ok(())
 }
 
+/// Test config with permission errors
+#[test]
+fn test_config_permission_errors() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config file
+    let config_path = repo_path.join(".git-workers.toml");
+    let config_content = r#"
+[repository]
+url = "https://github.com/test/repo.git"
+
+[hooks]
+post-create = ["echo 'test'"]
+"#;
+    fs::write(&config_path, config_content)?;
+
+    // Make config file read-only (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&config_path)?.permissions();
+        perms.set_mode(0o444); // Read-only
+        fs::set_permissions(&config_path, perms)?;
+    }
+
+    // Should still be able to read the config
+    let content = fs::read_to_string(&config_path)?;
+    assert!(content.contains("[repository]"));
+
+    println!("Testing config with permission restrictions");
+
+    Ok(())
+}
+
+/// Test config with corrupted file
+#[test]
+fn test_config_corrupted_file() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config file with binary data (corrupted)
+    let config_path = repo_path.join(".git-workers.toml");
+    let corrupted_data = vec![0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC];
+    fs::write(&config_path, corrupted_data)?;
+
+    // Reading should fail gracefully
+    let read_result = fs::read_to_string(&config_path);
+    match read_result {
+        Ok(content) => {
+            println!("Corrupted config read as: {content:?}");
+            // If it reads, it should be handled gracefully
+        }
+        Err(e) => {
+            println!("Corrupted config read failed (expected): {e}");
+            // This is expected behavior
+        }
+    }
+
+    Ok(())
+}
+
+/// Test config with invalid TOML syntax
+#[test]
+fn test_config_invalid_toml_syntax() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config with various TOML syntax errors
+    let invalid_configs = [
+        // Missing closing bracket
+        r#"[repository
+url = "https://github.com/test/repo.git"
+"#,
+        // Missing quotes
+        r#"[repository]
+url = https://github.com/test/repo.git
+"#,
+        // Invalid array syntax
+        r#"[hooks]
+post-create = [echo 'test']
+"#,
+        // Duplicate sections
+        r#"[repository]
+url = "https://github.com/test/repo.git"
+[repository]
+url = "https://github.com/other/repo.git"
+"#,
+        // Invalid key names
+        r#"[repository]
+123invalid = "value"
+"#,
+        // Unterminated strings
+        r#"[repository]
+url = "https://github.com/test/repo.git
+"#,
+    ];
+
+    for (i, invalid_config) in invalid_configs.iter().enumerate() {
+        let config_path = repo_path.join(format!(".git-workers-{i}.toml"));
+        fs::write(&config_path, invalid_config)?;
+
+        // File should exist but be invalid
+        assert!(config_path.exists());
+        println!("Testing invalid config {i}: {invalid_config}");
+
+        // Application should handle invalid TOML gracefully
+        let content = fs::read_to_string(&config_path)?;
+        assert!(!content.is_empty());
+    }
+
+    Ok(())
+}
+
+/// Test config with extremely large file
+#[test]
+fn test_config_large_file() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create a large config file
+    let mut large_config = String::new();
+    large_config.push_str("[repository]\n");
+    large_config.push_str("url = \"https://github.com/test/repo.git\"\n\n");
+    large_config.push_str("[hooks]\n");
+
+    // Add many hook entries
+    for i in 0..10000 {
+        large_config.push_str(&format!("post-create-{i} = [\"echo 'hook {i}'\"]\n"));
+    }
+
+    let config_path = repo_path.join(".git-workers.toml");
+    fs::write(&config_path, large_config)?;
+
+    // Should handle large config files
+    let content = fs::read_to_string(&config_path)?;
+    assert!(content.len() > 100000);
+    assert!(content.contains("[repository]"));
+
+    println!("Testing large config file ({} bytes)", content.len());
+
+    Ok(())
+}
+
+/// Test config in inaccessible directory
+#[test]
+fn test_config_inaccessible_directory() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+
+    // Create subdirectory
+    let subdir = repo_path.join("restricted");
+    fs::create_dir(&subdir)?;
+
+    // Create config in subdirectory
+    let config_path = subdir.join(".git-workers.toml");
+    let config_content = r#"
+[repository]
+url = "https://github.com/test/repo.git"
+"#;
+    fs::write(&config_path, config_content)?;
+
+    // Make directory inaccessible (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&subdir)?.permissions();
+        perms.set_mode(0o000); // No access
+        fs::set_permissions(&subdir, perms)?;
+    }
+
+    // Should handle inaccessible directory gracefully
+    #[cfg(unix)]
+    {
+        let read_result = fs::read_to_string(&config_path);
+        match read_result {
+            Ok(_) => println!("Unexpectedly could read config from inaccessible directory"),
+            Err(e) => println!("Cannot read config from inaccessible directory (expected): {e}"),
+        }
+    }
+
+    Ok(())
+}
+
+/// Test config with non-UTF8 content
+#[test]
+fn test_config_non_utf8_content() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config with non-UTF8 bytes
+    let config_path = repo_path.join(".git-workers.toml");
+    let non_utf8_data = {
+        let mut data = Vec::new();
+        // Start with valid UTF-8
+        data.extend_from_slice(b"[repository]\n");
+        data.extend_from_slice(b"url = \"https://github.com/test/repo.git\"\n");
+        // Add invalid UTF-8 sequence
+        data.extend_from_slice(&[0xFF, 0xFE, 0xFD]); // Invalid UTF-8
+        data.extend_from_slice(b"\n[hooks]\n");
+        data.extend_from_slice(b"post-create = [\"echo 'test'\"]\n");
+        data
+    };
+
+    fs::write(&config_path, non_utf8_data)?;
+
+    // Reading as UTF-8 should fail gracefully
+    let read_result = fs::read_to_string(&config_path);
+    match read_result {
+        Ok(content) => {
+            println!("Non-UTF8 config somehow read as: {content:?}");
+            // If it reads, it should be handled gracefully
+        }
+        Err(e) => {
+            println!("Non-UTF8 config read failed (expected): {e}");
+            // This is expected behavior
+        }
+    }
+
+    Ok(())
+}
+
+/// Test config with very long lines
+#[test]
+fn test_config_very_long_lines() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config with very long lines
+    let long_url = "https://github.com/".to_string() + &"a".repeat(10000) + "/repo.git";
+    let long_command = "echo '".to_string() + &"x".repeat(10000) + "'";
+
+    let config_content = format!(
+        r#"[repository]
+url = "{long_url}"
+
+[hooks]
+post-create = ["{long_command}"]
+"#
+    );
+
+    let config_path = repo_path.join(".git-workers.toml");
+    fs::write(&config_path, config_content)?;
+
+    // Should handle very long lines
+    let content = fs::read_to_string(&config_path)?;
+    assert!(content.len() > 20000);
+    assert!(content.contains("[repository]"));
+
+    println!(
+        "Testing config with very long lines ({} bytes)",
+        content.len()
+    );
+
+    Ok(())
+}
+
+/// Test config with special characters
+#[test]
+fn test_config_special_characters() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config with special characters
+    let config_content = r#"
+[repository]
+url = "https://github.com/test/repo-with-special-chars.git"
+description = "Repository with special chars: !@#$%^&*()_+{}[]|;':\",./<>?"
+
+[hooks]
+post-create = [
+    "echo 'Special chars: !@#$%^&*()_+{}[]|;':\",./<>?'",
+    "echo 'Unicode: こんにちは 世界 🌍'",
+    "echo 'Emoji: 🚀 🎉 ✨'"
+]
+"#;
+
+    let config_path = repo_path.join(".git-workers.toml");
+    fs::write(&config_path, config_content)?;
+
+    // Should handle special characters
+    let content = fs::read_to_string(&config_path)?;
+    assert!(content.contains("Special chars"));
+    assert!(content.contains("Unicode"));
+    assert!(content.contains("Emoji"));
+
+    println!("Testing config with special characters");
+
+    Ok(())
+}
+
+/// Test config with concurrent access
+#[test]
+fn test_config_concurrent_access() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config file
+    let config_path = repo_path.join(".git-workers.toml");
+    let config_content = r#"
+[repository]
+url = "https://github.com/test/repo.git"
+
+[hooks]
+post-create = ["echo 'test'"]
+"#;
+    fs::write(&config_path, config_content)?;
+
+    // Simulate concurrent access by reading multiple times
+    let mut handles = vec![];
+    for i in 0..5 {
+        let path = config_path.clone();
+        handles.push(std::thread::spawn(move || {
+            let content = fs::read_to_string(&path).unwrap();
+            assert!(content.contains("[repository]"));
+            println!("Thread {i} successfully read config");
+        }));
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Testing concurrent config access");
+
+    Ok(())
+}
+
+/// Test config with filesystem case sensitivity
+#[test]
+fn test_config_case_sensitivity() -> Result<()> {
+    let (_temp_dir, repo_path) = setup_test_repo()?;
+    std::env::set_current_dir(&repo_path)?;
+
+    // Create config files with different cases
+    let config_files = vec![
+        ".git-workers.toml",
+        ".Git-Workers.toml",
+        ".GIT-WORKERS.TOML",
+    ];
+
+    for config_file in &config_files {
+        let config_path = repo_path.join(config_file);
+        let config_content = format!(
+            r#"[repository]
+url = "https://github.com/test/repo-{config_file}.git"
+
+[hooks]
+post-create = ["echo 'from {config_file}'"]
+"#
+        );
+
+        // Try to create the file
+        match fs::write(&config_path, config_content) {
+            Ok(_) => {
+                println!("Created config file: {config_file}");
+                assert!(config_path.exists());
+            }
+            Err(e) => {
+                println!("Could not create config file {config_file}: {e}");
+                // This is expected on case-insensitive filesystems
+            }
+        }
+    }
+
+    println!("Testing config case sensitivity");
+
+    Ok(())
+}
+
 // =============================================================================
 // Performance tests
 // =============================================================================

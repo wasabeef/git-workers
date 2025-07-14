@@ -561,6 +561,240 @@ fn test_git_operations_outside_repo() {
     }
 }
 
+/// Test error handling for corrupted git repository
+#[test]
+fn test_corrupted_git_repository() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("corrupted-repo");
+
+    // Create a normal repository first
+    Repository::init(&repo_path)?;
+
+    // Corrupt the repository by removing critical files
+    let git_dir = repo_path.join(".git");
+    if git_dir.join("HEAD").exists() {
+        fs::remove_file(git_dir.join("HEAD"))?;
+    }
+
+    std::env::set_current_dir(&repo_path)?;
+
+    // Should handle corruption gracefully
+    let result = GitWorktreeManager::new();
+    // May succeed or fail depending on git2 behavior with corrupted repos
+    match result {
+        Ok(_) => println!("GitWorktreeManager handled corrupted repo gracefully"),
+        Err(e) => println!("GitWorktreeManager failed with corrupted repo: {e}"),
+    }
+
+    Ok(())
+}
+
+/// Test error handling for git command failures
+#[test]
+fn test_git_command_failures() -> Result<()> {
+    let (_temp_dir, _repo_path, manager) = setup_test_repo()?;
+
+    // Test creating worktree with invalid name
+    let result = manager.create_worktree_with_new_branch("", "invalid-name", "main");
+    assert!(result.is_err(), "Should fail with empty worktree name");
+
+    // Test creating worktree with non-existent base branch
+    let result = manager.create_worktree_with_new_branch("test", "test-branch", "non-existent");
+    assert!(result.is_err(), "Should fail with non-existent base branch");
+
+    // Test creating worktree with invalid path characters
+    let result = manager.create_worktree_with_new_branch("test\x00null", "test-branch", "main");
+    assert!(result.is_err(), "Should fail with null byte in name");
+
+    Ok(())
+}
+
+/// Test error handling for repository access permissions
+#[test]
+#[ignore] // Permission tests are flaky and should be run manually
+fn test_repository_permission_errors() -> Result<()> {
+    // Skip this test in CI environments where permission tests are problematic
+    if std::env::var("CI").is_ok() {
+        println!("Skipping permission test in CI environment");
+        return Ok(());
+    }
+
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("readonly-repo");
+
+    // Create repository
+    let repo = Repository::init(&repo_path)?;
+    create_initial_commit(&repo)?;
+
+    // Make the repository read-only (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&repo_path)?.permissions();
+        perms.set_mode(0o444); // Read-only
+        fs::set_permissions(&repo_path, perms)?;
+    }
+
+    std::env::set_current_dir(&repo_path)?;
+
+    // Should handle read-only repository
+    let result = GitWorktreeManager::new();
+    // May succeed for read operations
+    match result {
+        Ok(manager) => {
+            // Write operations should fail
+            let write_result =
+                manager.create_worktree_with_new_branch("test", "test-branch", "main");
+            // On Unix, this should fail due to permissions
+            #[cfg(unix)]
+            {
+                println!("Write operation result: {write_result:?}");
+                // Note: Actual behavior depends on git's permission handling
+            }
+
+            // Read operations should still work
+            let read_result = manager.list_worktrees();
+            assert!(read_result.is_ok(), "Read operations should still work");
+        }
+        Err(e) => println!("GitWorktreeManager failed with read-only repo: {e}"),
+    }
+
+    Ok(())
+}
+
+/// Test error handling for nested git repositories
+#[test]
+fn test_nested_git_repositories() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let outer_repo = temp_dir.path().join("outer-repo");
+    let inner_repo = outer_repo.join("inner-repo");
+
+    // Create outer repository
+    Repository::init(&outer_repo)?;
+
+    // Create inner repository
+    fs::create_dir_all(&inner_repo)?;
+    Repository::init(&inner_repo)?;
+
+    std::env::set_current_dir(&inner_repo)?;
+
+    // Should handle nested repository correctly
+    let result = GitWorktreeManager::new();
+    match result {
+        Ok(manager) => {
+            // Should work with inner repository
+            let repo_path = manager.repo().path();
+            assert!(repo_path.to_string_lossy().contains("inner-repo"));
+        }
+        Err(e) => println!("GitWorktreeManager failed with nested repo: {e}"),
+    }
+
+    Ok(())
+}
+
+/// Test error handling for very large repository
+#[test]
+fn test_large_repository_handling() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo()?;
+
+    // Create many branches to simulate large repository
+    for i in 0..100 {
+        let branch_name = format!("branch-{i:03}");
+        std::process::Command::new("git")
+            .args(["checkout", "-b", &branch_name])
+            .current_dir(&repo_path)
+            .output()?;
+
+        // Create commit on each branch
+        let file_name = format!("file-{i}.txt");
+        fs::write(repo_path.join(&file_name), format!("Content {i}"))?;
+        std::process::Command::new("git")
+            .args(["add", &file_name])
+            .current_dir(&repo_path)
+            .output()?;
+
+        std::process::Command::new("git")
+            .args(["commit", "-m", &format!("Commit {i}")])
+            .current_dir(&repo_path)
+            .output()?;
+    }
+
+    std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Test that operations still work with many branches
+    let start = std::time::Instant::now();
+    let (local_branches, _remote_branches) = manager.list_all_branches()?;
+    let duration = start.elapsed();
+
+    assert!(local_branches.len() >= 100, "Should have many branches");
+    assert!(
+        duration.as_secs() < 10,
+        "Should complete within reasonable time"
+    );
+
+    Ok(())
+}
+
+/// Test error handling for git operations with invalid UTF-8
+#[test]
+fn test_invalid_utf8_handling() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo()?;
+
+    // Create branch with non-ASCII characters
+    let branch_name = "feature-日本語";
+    std::process::Command::new("git")
+        .args(["checkout", "-b", branch_name])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Test that operations handle non-ASCII branch names
+    let (local_branches, _remote_branches) = manager.list_all_branches()?;
+    assert!(local_branches.iter().any(|b| b.contains("日本語")));
+
+    Ok(())
+}
+
+/// Test error handling for extremely long branch names
+#[test]
+fn test_long_branch_names() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo()?;
+
+    // Create branch with very long name
+    let long_name = "a".repeat(100);
+    let result = std::process::Command::new("git")
+        .args(["checkout", "-b", &long_name])
+        .current_dir(&repo_path)
+        .output();
+
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                // If git allows it, our code should handle it
+                std::process::Command::new("git")
+                    .args(["checkout", "main"])
+                    .current_dir(&repo_path)
+                    .output()?;
+
+                let (local_branches, _) = manager.list_all_branches()?;
+                assert!(local_branches.iter().any(|b| b.len() >= 100));
+            } else {
+                println!("Git rejected long branch name, which is expected");
+            }
+        }
+        Err(e) => println!("Git command failed with long branch name: {e}"),
+    }
+
+    Ok(())
+}
+
 /// Test operations on bare repository
 #[test]
 fn test_operations_on_bare_repo() -> Result<()> {
