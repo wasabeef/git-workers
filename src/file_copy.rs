@@ -14,6 +14,7 @@ use crate::constants::{
     BYTES_PER_MB, COLON_POSITION_WINDOWS, GIT_DIR, ICON_ERROR, ICON_FILE, ICON_INFO, ICON_SUCCESS,
     ICON_WARNING, MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WINDOWS_PATH_MIN_LENGTH, WORKTREES_SUBDIR,
 };
+use crate::filesystem::FileSystem;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
@@ -48,6 +49,21 @@ pub fn copy_configured_files(
     config: &FilesConfig,
     destination_path: &Path,
     manager: &GitWorktreeManager,
+) -> Result<Vec<String>> {
+    copy_configured_files_with_fs(
+        config,
+        destination_path,
+        manager,
+        &crate::filesystem::RealFileSystem::new(),
+    )
+}
+
+/// Internal implementation with filesystem abstraction for testing
+pub fn copy_configured_files_with_fs(
+    config: &FilesConfig,
+    destination_path: &Path,
+    manager: &GitWorktreeManager,
+    fs: &dyn FileSystem,
 ) -> Result<Vec<String>> {
     if config.copy.is_empty() {
         return Ok(Vec::new());
@@ -85,9 +101,9 @@ pub fn copy_configured_files(
         let source_path = source_dir.join(file_pattern);
 
         // Check file size before copying
-        if source_path.exists() {
-            if let Ok(size) = calculate_path_size(&source_path) {
-                if size > MAX_FILE_SIZE && source_path.is_file() {
+        if fs.exists(&source_path) {
+            if let Ok(size) = calculate_path_size_with_fs(&source_path, fs) {
+                if size > MAX_FILE_SIZE && fs.is_file(&source_path) {
                     let warning = ICON_WARNING.yellow();
                     let pattern = file_pattern.yellow();
                     let size_mb = size as f64 / BYTES_PER_MB as f64;
@@ -98,7 +114,7 @@ pub fn copy_configured_files(
         }
         let dest_path = destination_path.join(file_pattern);
 
-        match copy_file_or_directory(&source_path, &dest_path) {
+        match copy_file_or_directory_with_fs(&source_path, &dest_path, fs) {
             Ok(count) => {
                 if count > 0 {
                     let checkmark = ICON_SUCCESS.green();
@@ -246,6 +262,7 @@ const MAX_FILE_SIZE: u64 = MAX_FILE_SIZE_MB * BYTES_PER_MB;
 ///
 /// * `Ok(u64)` - Total size in bytes
 /// * `Err` - If the path doesn't exist or can't be accessed
+#[allow(dead_code)]
 fn calculate_path_size(path: &Path) -> Result<u64> {
     if !path.exists() {
         return Ok(0);
@@ -267,7 +284,37 @@ fn calculate_path_size(path: &Path) -> Result<u64> {
     }
 }
 
+/// Calculates the total size of a file or directory using filesystem abstraction
+///
+/// For directories, this recursively calculates the size of all files within.
+///
+/// # Returns
+///
+/// * `Ok(u64)` - Total size in bytes
+/// * `Err` - If the path doesn't exist or can't be accessed
+fn calculate_path_size_with_fs(path: &Path, fs: &dyn FileSystem) -> Result<u64> {
+    if !fs.exists(path) {
+        return Ok(0);
+    }
+
+    let metadata = fs.symlink_metadata(path)?;
+
+    // Skip symlinks
+    if metadata.file_type().is_symlink() {
+        return Ok(0);
+    }
+
+    if metadata.is_file() {
+        Ok(metadata.len())
+    } else if metadata.is_dir() {
+        calculate_directory_size_with_fs(path, 0, fs)
+    } else {
+        Ok(0)
+    }
+}
+
 /// Recursively calculates the size of a directory
+#[allow(dead_code)]
 fn calculate_directory_size(path: &Path, depth: usize) -> Result<u64> {
     if depth >= MAX_DIRECTORY_DEPTH {
         return Ok(0); // Stop at max depth
@@ -284,6 +331,39 @@ fn calculate_directory_size(path: &Path, depth: usize) -> Result<u64> {
                 total_size += metadata.len();
             } else if metadata.is_dir() {
                 if let Ok(dir_size) = calculate_directory_size(&path, depth + 1) {
+                    total_size += dir_size;
+                }
+            }
+        }
+    }
+
+    Ok(total_size)
+}
+
+/// Recursively calculates the size of a directory using filesystem abstraction
+/// Note: Directory traversal uses the real filesystem for compatibility
+fn calculate_directory_size_with_fs(
+    path: &Path,
+    depth: usize,
+    _fs: &dyn FileSystem,
+) -> Result<u64> {
+    if depth >= MAX_DIRECTORY_DEPTH {
+        return Ok(0); // Stop at max depth
+    }
+
+    let mut total_size = 0;
+
+    // Use real filesystem for directory traversal due to DirEntry complexity
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+
+        if let Ok(metadata) = entry.metadata() {
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                if let Ok(dir_size) = calculate_directory_size_with_fs(&entry_path, depth + 1, _fs)
+                {
                     total_size += dir_size;
                 }
             }
@@ -335,6 +415,7 @@ fn is_safe_path(path: &str) -> bool {
 /// # Returns
 ///
 /// Returns the number of files copied
+#[allow(dead_code)]
 fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     if !source.exists() {
         let source_path = source.display();
@@ -379,11 +460,65 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     }
 }
 
+/// Copies a file or directory from source to destination using filesystem abstraction
+///
+/// # Returns
+///
+/// Returns the number of files copied
+fn copy_file_or_directory_with_fs(
+    source: &Path,
+    dest: &Path,
+    fs: &dyn FileSystem,
+) -> Result<usize> {
+    if !fs.exists(source) {
+        let source_path = source.display();
+        return Err(anyhow!("Source path not found: {source_path}"));
+    }
+
+    // Symlink detection with warning
+    if fs.symlink_metadata(source)?.file_type().is_symlink() {
+        let warning = "⚠️".yellow();
+        let source_path = source.display();
+        println!("  {warning} Skipping symlink: {source_path}");
+        return Ok(0);
+    }
+
+    if fs.is_file(source) {
+        // Create parent directory if needed
+        if let Some(parent) = dest.parent() {
+            fs.create_dir_all(parent).with_context(|| {
+                format!(
+                    "Failed to create parent directory: {parent_display}",
+                    parent_display = parent.display()
+                )
+            })?;
+        }
+
+        fs.copy(source, dest).with_context(|| {
+            format!(
+                "Failed to copy file from {} to {}",
+                source.display(),
+                dest.display()
+            )
+        })?;
+
+        Ok(1)
+    } else if fs.is_dir(source) {
+        copy_directory_recursive_with_fs(source, dest, 0, fs)
+    } else {
+        Err(anyhow!(
+            "Source is neither a file nor a directory: {}",
+            source.display()
+        ))
+    }
+}
+
 /// Recursively copies a directory and its contents
 ///
 /// # Security
 ///
 /// Includes depth limiting to prevent infinite recursion from circular symlinks
+#[allow(dead_code)]
 fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<usize> {
     if depth >= MAX_DIRECTORY_DEPTH {
         return Err(anyhow!(
@@ -442,7 +577,78 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
     Ok(total_files)
 }
 
+/// Recursively copies a directory and its contents using filesystem abstraction
+///
+/// # Security
+///
+/// Includes depth limiting to prevent infinite recursion from circular symlinks
+/// Note: Directory traversal uses the real filesystem for compatibility
+fn copy_directory_recursive_with_fs(
+    source: &Path,
+    dest: &Path,
+    depth: usize,
+    fs: &dyn FileSystem,
+) -> Result<usize> {
+    if depth >= MAX_DIRECTORY_DEPTH {
+        return Err(anyhow!(
+            "Maximum directory depth ({}) exceeded. Possible circular reference.",
+            MAX_DIRECTORY_DEPTH
+        ));
+    }
+
+    fs.create_dir_all(dest).with_context(|| {
+        format!(
+            "Failed to create directory: {dest_display}",
+            dest_display = dest.display()
+        )
+    })?;
+
+    let mut total_files = 0;
+
+    // Use real filesystem for directory traversal due to DirEntry complexity
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let source_path = entry.path();
+        let dest_path = dest.join(&file_name);
+
+        // Check for circular reference
+        if source_path
+            .canonicalize()
+            .ok()
+            .and_then(|canonical_source| {
+                dest.canonicalize()
+                    .ok()
+                    .map(|canonical_dest| canonical_source.starts_with(&canonical_dest))
+            })
+            .unwrap_or(false)
+        {
+            println!(
+                "  {} Skipping circular reference: {}",
+                ICON_WARNING.yellow(),
+                source_path.display()
+            );
+            continue;
+        }
+
+        match copy_directory_recursive_impl_with_fs(&source_path, &dest_path, depth + 1, fs) {
+            Ok(count) => total_files += count,
+            Err(e) => {
+                println!(
+                    "  {} Failed to copy {}: {}",
+                    ICON_WARNING.yellow(),
+                    source_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(total_files)
+}
+
 /// Implementation helper for recursive directory copying
+#[allow(dead_code)]
 fn copy_directory_recursive_impl(source: &Path, dest: &Path, depth: usize) -> Result<usize> {
     // Symlink detection
     if source.symlink_metadata()?.file_type().is_symlink() {
@@ -454,6 +660,28 @@ fn copy_directory_recursive_impl(source: &Path, dest: &Path, depth: usize) -> Re
         Ok(1)
     } else if source.is_dir() {
         copy_directory_recursive(source, dest, depth)
+    } else {
+        Ok(0) // Skip special files
+    }
+}
+
+/// Implementation helper for recursive directory copying with filesystem abstraction
+fn copy_directory_recursive_impl_with_fs(
+    source: &Path,
+    dest: &Path,
+    depth: usize,
+    fs: &dyn FileSystem,
+) -> Result<usize> {
+    // Symlink detection
+    if fs.symlink_metadata(source)?.file_type().is_symlink() {
+        return Ok(0); // Skip symlinks silently in recursive copy
+    }
+
+    if fs.is_file(source) {
+        fs.copy(source, dest)?;
+        Ok(1)
+    } else if fs.is_dir(source) {
+        copy_directory_recursive_with_fs(source, dest, depth, fs)
     } else {
         Ok(0) // Skip special files
     }

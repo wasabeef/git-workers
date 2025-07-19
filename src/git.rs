@@ -50,19 +50,20 @@ use crate::constants::{
     LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT, WINDOW_FIRST_INDEX, WINDOW_SECOND_INDEX,
     WINDOW_SIZE_PAIRS,
 };
+use crate::filesystem::FileSystem;
 
 // Create Duration from constant for stale lock timeout
 const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(STALE_LOCK_TIMEOUT_SECS);
 
 /// Simple lock structure for worktree operations
-struct WorktreeLock {
+pub struct WorktreeLock {
     lock_path: PathBuf,
     _file: Option<File>,
 }
 
 impl WorktreeLock {
     /// Attempts to acquire a lock for worktree operations
-    fn acquire(git_dir: &Path) -> Result<Self> {
+    pub fn acquire(git_dir: &Path) -> Result<Self> {
         let lock_path = git_dir.join(LOCK_FILE_NAME);
 
         // Check for stale lock
@@ -168,7 +169,7 @@ fn find_common_parent(worktrees: &[WorktreeInfo]) -> Option<PathBuf> {
 /// This struct wraps a git2::Repository and provides high-level
 /// operations for worktree management.
 pub struct GitWorktreeManager {
-    repo: Repository,
+    pub(crate) repo: Repository,
 }
 
 impl GitWorktreeManager {
@@ -252,7 +253,7 @@ impl GitWorktreeManager {
     /// Returns an error if:
     /// - Cannot find the parent directory
     /// - Repository has no working directory (for non-bare repos)
-    fn get_default_worktree_base_path(&self) -> Result<PathBuf> {
+    pub fn get_default_worktree_base_path(&self) -> Result<PathBuf> {
         if self.repo.is_bare() {
             self.repo
                 .path()
@@ -775,7 +776,7 @@ impl GitWorktreeManager {
     /// # Errors
     ///
     /// Returns an error if the git command fails
-    fn create_worktree_with_branch(&self, path: &Path, branch_name: &str) -> Result<PathBuf> {
+    pub fn create_worktree_with_branch(&self, path: &Path, branch_name: &str) -> Result<PathBuf> {
         use std::process::Command;
 
         let mut cmd = Command::new(GIT_CMD);
@@ -893,7 +894,7 @@ impl GitWorktreeManager {
     /// - The current directory cannot be determined
     /// - The git command fails (e.g., path already exists, no commits)
     /// - Path canonicalization fails after creation
-    fn create_worktree_from_head(&self, path: &Path, _name: &str) -> Result<PathBuf> {
+    pub fn create_worktree_from_head(&self, path: &Path, _name: &str) -> Result<PathBuf> {
         use std::process::Command;
 
         // Convert to absolute path to ensure consistent interpretation by git command
@@ -1267,7 +1268,20 @@ impl GitWorktreeManager {
     ///
     /// Branch renaming is handled separately by the caller if needed.
     pub fn rename_worktree(&self, old_name: &str, new_name: &str) -> Result<PathBuf> {
-        use std::fs;
+        self.rename_worktree_with_fs(
+            old_name,
+            new_name,
+            &crate::filesystem::RealFileSystem::new(),
+        )
+    }
+
+    /// Internal implementation of rename_worktree with filesystem abstraction
+    pub fn rename_worktree_with_fs(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        fs: &dyn FileSystem,
+    ) -> Result<PathBuf> {
         use std::process::Command;
 
         // Validate new name
@@ -1314,7 +1328,7 @@ impl GitWorktreeManager {
         }
 
         // Step 1: Move the directory
-        fs::rename(&old_path, &new_path)?;
+        fs.rename(&old_path, &new_path)?;
 
         // Step 2: Rename the git metadata directory
         // Use git rev-parse to find the common git directory
@@ -1340,13 +1354,13 @@ impl GitWorktreeManager {
             .join(new_name);
 
         if old_worktree_git_dir.exists() {
-            fs::rename(&old_worktree_git_dir, &new_worktree_git_dir)?;
+            fs.rename(&old_worktree_git_dir, &new_worktree_git_dir)?;
 
             // Update the gitdir file
             let gitdir_file = new_worktree_git_dir.join("gitdir");
             if gitdir_file.exists() {
                 let new_path_str = new_path.display();
-                fs::write(&gitdir_file, format!("{new_path_str}{GIT_GITDIR_SUFFIX}"))?;
+                fs.write(&gitdir_file, &format!("{new_path_str}{GIT_GITDIR_SUFFIX}"))?;
             }
         }
 
@@ -1355,7 +1369,7 @@ impl GitWorktreeManager {
         if git_file_path.exists() {
             let git_dir_str = new_worktree_git_dir.display();
             let git_file_content = format!("{GIT_GITDIR_PREFIX}{git_dir_str}\n");
-            fs::write(&git_file_path, git_file_content)?;
+            fs.write(&git_file_path, &git_file_content)?;
         }
 
         // Step 4: Run git worktree repair to update Git's internal tracking

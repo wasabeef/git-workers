@@ -154,6 +154,7 @@ pub fn input_with_esc_support_raw(prompt: &str, default: Option<&str>) -> Option
 ///     None => println!("Operation cancelled"),
 /// }
 /// ```
+#[allow(dead_code)]
 pub fn input_esc_raw(prompt: &str) -> Option<String> {
     input_with_esc_support_raw(prompt, None)
 }

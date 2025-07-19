@@ -28,6 +28,7 @@
 //! - [`repository_info`] - Repository context detection
 //! - [`utils`] - Utility functions for terminal output
 //! - [`input_esc_raw`] - Custom input handling with ESC key support
+//! - [`ui`] - User interface abstraction layer for testability
 //!
 //! # Usage Example
 //!
@@ -46,10 +47,12 @@ pub mod commands;
 pub mod config;
 pub mod constants;
 pub mod file_copy;
+pub mod filesystem;
 pub mod git;
 pub mod git_interface;
 pub mod hooks;
 pub mod input_esc_raw;
 pub mod menu;
 pub mod repository_info;
+pub mod ui;
 pub mod utils;
