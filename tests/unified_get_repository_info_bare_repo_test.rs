@@ -130,11 +130,10 @@ fn test_get_repository_info_bare_special_characters() -> Result<()> {
 /// Test bare repository with spaces in name
 #[test]
 fn test_get_repository_info_bare_with_spaces() -> Result<()> {
-    let temp_dir = TempDir::new()?;
-
     let space_names = vec!["my project.git", "test repo.git"];
 
     for space_name in space_names {
+        let temp_dir = TempDir::new()?;
         let bare_path = temp_dir.path().join(space_name);
 
         // Initialize bare repository

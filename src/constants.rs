@@ -88,7 +88,9 @@ pub const MAX_WORKTREE_NAME_LENGTH: usize = 255;
 pub const MAX_FILE_SIZE_MB: u64 = 100;
 
 // Special characters
-pub const INVALID_FILESYSTEM_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'];
+pub const INVALID_FILESYSTEM_CHARS: &[char] = &[
+    '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0', ';', '\'', '`',
+];
 pub const WINDOWS_RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
 
 // Timeouts

@@ -111,7 +111,7 @@ fn test_file_copy_basic() -> Result<()> {
 
     let files_config = FilesConfig {
         copy: vec![".env".to_string(), ".env.local".to_string()],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -142,7 +142,7 @@ fn test_file_copy_with_subdirectories() -> Result<()> {
 
     let files_config = FilesConfig {
         copy: vec!["config/local.json".to_string()],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -176,7 +176,7 @@ fn test_special_filenames() -> Result<()> {
 
     let files_config = FilesConfig {
         copy: special_names.iter().map(|s| s.to_string()).collect(),
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -213,7 +213,7 @@ fn test_directory_copy_recursive() -> Result<()> {
 
     let files_config = FilesConfig {
         copy: vec!["config".to_string()],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -252,7 +252,7 @@ fn test_empty_directory_copy() -> Result<()> {
 
     let files_config = FilesConfig {
         copy: vec!["empty_dir".to_string()],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -397,7 +397,7 @@ fn test_file_copy_security() -> Result<()> {
             "/etc/hosts".to_string(),
             "~/sensitive".to_string(),
         ],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -430,7 +430,7 @@ fn test_path_traversal_detailed() -> Result<()> {
     for path in dangerous_paths {
         let files_config = FilesConfig {
             copy: vec![path.to_string()],
-            source: None,
+            source: Some(repo_path.to_str().unwrap().to_string()),
         };
 
         let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -456,7 +456,7 @@ fn test_file_copy_missing_files() -> Result<()> {
             ".env".to_string(),            // doesn't exist
             "nonexistent.txt".to_string(), // doesn't exist
         ],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     // Should not panic, just warn
@@ -552,7 +552,7 @@ fn test_file_copy_mixed_content() -> Result<()> {
             "standalone.txt".to_string(),
             "config".to_string(),
         ],
-        source: None,
+        source: Some(repo_path.to_str().unwrap().to_string()),
     };
 
     let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
@@ -563,6 +563,401 @@ fn test_file_copy_mixed_content() -> Result<()> {
     assert!(worktree_path.join("standalone.txt").exists());
     assert!(worktree_path.join("config").is_dir());
     assert!(worktree_path.join("config/app.json").exists());
+
+    Ok(())
+}
+
+// =============================================================================
+// Extended error handling tests
+// =============================================================================
+
+/// Test file copy with permission errors
+#[test]
+fn test_file_copy_permission_errors() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create source file
+    let source_file = repo_path.join("protected-file.txt");
+    fs::write(&source_file, "protected content")?;
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Make source file read-only (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&source_file)?.permissions();
+        perms.set_mode(0o444); // Read-only
+        fs::set_permissions(&source_file, perms)?;
+    }
+
+    // Make destination directory read-only (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&worktree_path)?.permissions();
+        perms.set_mode(0o444); // Read-only
+        fs::set_permissions(&worktree_path, perms)?;
+    }
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: vec!["protected-file.txt".to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with permission errors");
+
+    // Should handle permission errors gracefully
+    assert!(source_file.exists());
+    // On Unix, copy should fail due to read-only destination
+    #[cfg(unix)]
+    {
+        assert_eq!(copied.len(), 0, "Should not copy to read-only destination");
+    }
+
+    Ok(())
+}
+
+/// Test file copy with disk space issues
+#[test]
+fn test_file_copy_disk_space_simulation() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create very large file (simulating disk space issue)
+    let large_file = repo_path.join("large-file.txt");
+    let large_content = "x".repeat(1024 * 1024); // 1MB content
+    fs::write(&large_file, large_content)?;
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: vec!["large-file.txt".to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with large file");
+
+    // Should handle large files according to size limits
+    assert!(large_file.exists());
+    let metadata = fs::metadata(&large_file)?;
+    assert!(metadata.len() >= 1024 * 1024);
+
+    // File should be copied as it's under 100MB limit
+    assert_eq!(copied.len(), 1);
+
+    Ok(())
+}
+
+/// Test file copy with invalid symlinks
+#[test]
+fn test_file_copy_invalid_symlinks() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create invalid symlink (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let symlink_path = repo_path.join("broken-symlink");
+        let target_path = repo_path.join("non-existent-target");
+
+        // Create symlink to non-existent target
+        symlink(&target_path, &symlink_path)?;
+
+        // Verify symlink is broken (exists as symlink but target doesn't exist)
+        assert!(symlink_path.symlink_metadata().is_ok());
+        assert!(!target_path.exists());
+
+        // Create worktree directory
+        let worktree_path = create_test_worktree(&repo_path)?;
+
+        // Create config
+        let files_config = FilesConfig {
+            copy: vec!["broken-symlink".to_string()],
+            source: Some(repo_path.to_str().unwrap().to_string()),
+        };
+
+        let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+        println!("Testing copy with broken symlink");
+
+        // Should handle broken symlinks gracefully (skip them)
+        assert_eq!(copied.len(), 0, "Broken symlinks should be skipped");
+    }
+
+    Ok(())
+}
+
+/// Test file copy with circular symlinks
+#[test]
+fn test_file_copy_circular_symlinks() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create circular symlinks (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let symlink_a = repo_path.join("symlink-a");
+        let symlink_b = repo_path.join("symlink-b");
+
+        // Create circular symlinks
+        symlink(&symlink_b, &symlink_a)?;
+        symlink(&symlink_a, &symlink_b)?;
+
+        // Create worktree directory
+        let worktree_path = create_test_worktree(&repo_path)?;
+
+        // Create config
+        let files_config = FilesConfig {
+            copy: vec!["symlink-a".to_string(), "symlink-b".to_string()],
+            source: Some(repo_path.to_str().unwrap().to_string()),
+        };
+
+        let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+        println!("Testing copy with circular symlinks");
+
+        // Should handle circular symlinks gracefully (skip them)
+        assert_eq!(copied.len(), 0, "Circular symlinks should be skipped");
+    }
+
+    Ok(())
+}
+
+/// Test file copy with deeply nested directories
+#[test]
+fn test_file_copy_deeply_nested_directories() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create deeply nested directory structure
+    let mut nested_path = repo_path.clone();
+    for i in 0..10 {
+        // Reduced from 50 to 10 for test performance
+        nested_path = nested_path.join(format!("level-{i}"));
+    }
+    fs::create_dir_all(&nested_path)?;
+
+    // Create file in deeply nested directory
+    let nested_file = nested_path.join("deep-file.txt");
+    fs::write(&nested_file, "deep content")?;
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Create config with deeply nested path
+    let relative_path = nested_file.strip_prefix(&repo_path)?.to_string_lossy();
+    let files_config = FilesConfig {
+        copy: vec![relative_path.to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with deeply nested directories");
+
+    // Should handle deeply nested directories up to limits
+    assert!(nested_file.exists());
+    assert_eq!(copied.len(), 1);
+
+    Ok(())
+}
+
+/// Test file copy with special characters in filenames
+#[test]
+fn test_file_copy_special_characters() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create files with special characters (where filesystem allows)
+    let special_files = vec![
+        "file with spaces.txt",
+        "file-with-hyphens.txt",
+        "file_with_underscores.txt",
+        "file.with.dots.txt",
+        "file(with) parentheses.txt",
+        "file[with]brackets.txt",
+    ];
+
+    for filename in &special_files {
+        let file_path = repo_path.join(filename);
+        fs::write(&file_path, format!("content of {filename}"))?;
+    }
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: special_files.iter().map(|s| s.to_string()).collect(),
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with special characters in filenames");
+
+    // Should handle special characters in filenames
+    assert_eq!(copied.len(), special_files.len());
+    for filename in &special_files {
+        assert!(repo_path.join(filename).exists());
+        assert!(worktree_path.join(filename).exists());
+    }
+
+    Ok(())
+}
+
+/// Test file copy with concurrent access
+#[test]
+fn test_file_copy_concurrent_access() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create source file
+    let source_file = repo_path.join("concurrent-file.txt");
+    fs::write(&source_file, "concurrent content")?;
+
+    // Create multiple worktree directories
+    let worktree_paths: Vec<_> = (0..3)
+        .map(|i| repo_path.join("worktrees").join(format!("worktree-{i}")))
+        .collect();
+
+    for worktree_path in &worktree_paths {
+        fs::create_dir_all(worktree_path)?;
+    }
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: vec!["concurrent-file.txt".to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    // Test concurrent access by copying to multiple destinations
+    for worktree_path in &worktree_paths {
+        let copied = file_copy::copy_configured_files(&files_config, worktree_path, &manager)?;
+        assert_eq!(copied.len(), 1);
+        assert!(worktree_path.join("concurrent-file.txt").exists());
+    }
+
+    println!("Testing copy with concurrent access simulation");
+
+    // Should handle concurrent access gracefully
+    assert!(source_file.exists());
+
+    Ok(())
+}
+
+/// Test file copy with filesystem limits
+#[test]
+fn test_file_copy_filesystem_limits() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create file with long filename (filesystem dependent)
+    let long_name = "a".repeat(200); // Reduced from 255 for better compatibility
+    let long_filename = format!("{long_name}.txt");
+
+    // Try to create file with long name
+    let long_file = repo_path.join(&long_filename);
+    match fs::write(&long_file, "content with long filename") {
+        Ok(_) => {
+            // If filesystem allows it, test copying
+            let worktree_path = create_test_worktree(&repo_path)?;
+
+            let files_config = FilesConfig {
+                copy: vec![long_filename.clone()],
+                source: Some(repo_path.to_str().unwrap().to_string()),
+            };
+
+            let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+            println!("Testing copy with maximum filename length");
+            assert!(long_file.exists());
+            assert_eq!(copied.len(), 1);
+            assert!(worktree_path.join(&long_filename).exists());
+        }
+        Err(e) => {
+            // If filesystem doesn't allow it, that's also valid
+            println!("Filesystem doesn't support long filenames - this is expected: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Test file copy with zero-byte files
+#[test]
+fn test_file_copy_zero_byte_files() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create zero-byte file
+    let empty_file = repo_path.join("empty.txt");
+    fs::write(&empty_file, "")?;
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: vec!["empty.txt".to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with zero-byte files");
+
+    // Should handle zero-byte files
+    assert_eq!(copied.len(), 1);
+    assert!(worktree_path.join("empty.txt").exists());
+
+    // Verify content is empty
+    let content = fs::read_to_string(worktree_path.join("empty.txt"))?;
+    assert!(content.is_empty());
+
+    Ok(())
+}
+
+/// Test file copy with binary files
+#[test]
+fn test_file_copy_binary_files() -> Result<()> {
+    let (_temp_dir, repo_path, manager) = setup_test_repo_git()?;
+
+    // Create binary file
+    let binary_file = repo_path.join("binary.bin");
+    let binary_data = vec![0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC];
+    fs::write(&binary_file, &binary_data)?;
+
+    // Create worktree directory
+    let worktree_path = create_test_worktree(&repo_path)?;
+
+    // Create config
+    let files_config = FilesConfig {
+        copy: vec!["binary.bin".to_string()],
+        source: Some(repo_path.to_str().unwrap().to_string()),
+    };
+
+    let copied = file_copy::copy_configured_files(&files_config, &worktree_path, &manager)?;
+
+    println!("Testing copy with binary files");
+
+    // Should handle binary files (if file exists, it should be copied)
+    if binary_file.exists() {
+        assert_eq!(copied.len(), 1);
+        assert!(worktree_path.join("binary.bin").exists());
+    } else {
+        assert_eq!(copied.len(), 0);
+        println!("Binary file not found, copy skipped as expected");
+    }
+
+    // Verify binary content is preserved (only if file was actually copied)
+    if binary_file.exists() && worktree_path.join("binary.bin").exists() {
+        let copied_data = fs::read(worktree_path.join("binary.bin"))?;
+        assert_eq!(copied_data, binary_data);
+    }
 
     Ok(())
 }

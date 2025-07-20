@@ -20,7 +20,7 @@
 use anyhow::{anyhow, Result};
 use colored::*;
 use console::Term;
-use dialoguer::{Confirm, FuzzySelect, MultiSelect, Select};
+use dialoguer::{Confirm, FuzzySelect, MultiSelect};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
@@ -43,10 +43,10 @@ use crate::constants::{
 };
 use crate::file_copy;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
+use crate::git_interface::{GitReadOperations, RealGitOperations};
 use crate::hooks::{self, HookContext};
-use crate::input_esc_raw::{
-    input_esc_raw as input_esc, input_esc_with_default_raw as input_esc_with_default,
-};
+use crate::input_esc_raw::input_esc_with_default_raw as input_esc_with_default;
+use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, get_theme, press_any_key_to_continue, write_switch_path};
 
 /// Gets the appropriate icon for a worktree based on its status
@@ -60,11 +60,37 @@ use crate::utils::{self, get_theme, press_any_key_to_continue, write_switch_path
 /// Returns a colored icon:
 /// - `→` in bright green for the current worktree
 /// - `▸` in bright blue for other worktrees
-fn get_worktree_icon(is_current: bool) -> colored::ColoredString {
+fn get_worktree_icon_internal(is_current: bool) -> colored::ColoredString {
     if is_current {
         ICON_SWITCH.bright_green().bold()
     } else {
         ICON_ARROW.bright_blue()
+    }
+}
+
+/// Gets the appropriate icon for a worktree based on its status and properties
+///
+/// # Arguments
+///
+/// * `worktree` - The worktree information struct
+///
+/// # Returns
+///
+/// Returns the appropriate icon string:
+/// - `🏠` for current worktree
+/// - `🔒` for locked worktree
+/// - `🔗` for detached HEAD worktree
+/// - `📁` for regular worktree
+#[allow(dead_code)]
+pub fn get_worktree_icon(worktree: &WorktreeInfo) -> &'static str {
+    if worktree.is_current {
+        "🏠"
+    } else if worktree.is_locked {
+        "🔒"
+    } else if worktree.branch == "detached" {
+        "🔗"
+    } else {
+        "📁"
     }
 }
 
@@ -98,17 +124,17 @@ fn get_worktree_icon(is_current: bool) -> colored::ColoredString {
 /// - Git repository operations fail
 /// - Terminal operations fail
 pub fn list_worktrees() -> Result<()> {
-    let manager = GitWorktreeManager::new()?;
-    list_worktrees_internal(&manager)
+    let git_ops = RealGitOperations::new()?;
+    list_worktrees_with_git(&git_ops)
 }
 
-/// Internal implementation of list_worktrees
+/// Internal implementation of list_worktrees with GitReadOperations
 ///
 /// Separated for better testability and code organization.
 ///
 /// # Arguments
 ///
-/// * `manager` - Git worktree manager instance
+/// * `git_ops` - Git read operations interface
 ///
 /// # Implementation Details
 ///
@@ -117,8 +143,8 @@ pub fn list_worktrees() -> Result<()> {
 /// 3. Calculates column widths for proper alignment
 /// 4. Determines pagination based on terminal height
 /// 5. Displays the table with navigation support
-fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
-    let worktrees = manager.list_worktrees()?;
+pub fn list_worktrees_with_git(git_ops: &dyn GitReadOperations) -> Result<()> {
+    let worktrees = git_ops.list_worktrees()?;
 
     if worktrees.is_empty() {
         println!();
@@ -214,7 +240,7 @@ fn list_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 
         // Table rows
         for wt in page_worktrees {
-            let icon = get_worktree_icon(wt.is_current);
+            let icon = get_worktree_icon_internal(wt.is_current);
             let branch_display = if wt.is_current {
                 format!("{} [current]", wt.branch).bright_green()
             } else {
@@ -455,14 +481,16 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 /// - Custom path validation fails
 pub fn create_worktree() -> Result<bool> {
     let manager = GitWorktreeManager::new()?;
-    create_worktree_internal(&manager)
+    let ui = DialoguerUI;
+    create_worktree_with_ui(&manager, &ui)
 }
 
-/// Internal implementation of create_worktree
+/// Internal implementation of create_worktree with dependency injection
 ///
 /// # Arguments
 ///
 /// * `manager` - Git worktree manager instance
+/// * `ui` - User interface implementation for testability
 ///
 /// # Implementation Notes
 ///
@@ -496,7 +524,10 @@ pub fn create_worktree() -> Result<bool> {
 ///
 /// * `true` - If a worktree was created and the user switched to it
 /// * `false` - If the operation was cancelled or user chose not to switch
-fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
+pub fn create_worktree_with_ui(
+    manager: &GitWorktreeManager,
+    ui: &dyn UserInterface,
+) -> Result<bool> {
     println!();
     let header = section_header("Create New Worktree");
     println!("{header}");
@@ -507,9 +538,9 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
     let has_worktrees = !existing_worktrees.is_empty();
 
     // Get worktree name
-    let name = match input_esc("Enter worktree name") {
-        Some(name) => name.trim().to_string(),
-        None => return Ok(false),
+    let name = match ui.input("Enter worktree name") {
+        Ok(name) => name.trim().to_string(),
+        Err(_) => return Ok(false),
     };
 
     if name.is_empty() {
@@ -546,14 +577,9 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
             "Custom path (specify relative to project root)".to_string(),
         ];
 
-        let selection = match Select::with_theme(&get_theme())
-            .with_prompt("Select worktree location pattern")
-            .items(&options)
-            .default(WORKTREE_LOCATION_SUBDIRECTORY) // Default to subdirectory (recommended)
-            .interact_opt()?
-        {
-            Some(selection) => selection,
-            None => return Ok(false),
+        let selection = match ui.select("Select worktree location pattern", &options) {
+            Ok(selection) => selection,
+            Err(_) => return Ok(false),
         };
 
         match selection {
@@ -568,9 +594,9 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                     "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed();
                 println!("{examples}");
 
-                let custom_path = match input_esc("Custom path") {
-                    Some(path) => path.trim().to_string(),
-                    None => return Ok(false),
+                let custom_path = match ui.input("Custom path") {
+                    Ok(path) => path.trim().to_string(),
+                    Err(_) => return Ok(false),
                 };
 
                 if custom_path.is_empty() {
@@ -594,15 +620,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     // Branch handling
     println!();
-    let branch_options = vec!["Create from current HEAD", "Select branch", "Select tag"];
+    let branch_options = vec![
+        "Create from current HEAD".to_string(),
+        "Select branch".to_string(),
+        "Select tag".to_string(),
+    ];
 
-    let branch_choice = match Select::with_theme(&get_theme())
-        .with_prompt("Select branch option")
-        .items(&branch_options)
-        .interact_opt()?
-    {
-        Some(choice) => choice,
-        None => return Ok(false),
+    let branch_choice = match ui.select("Select branch option", &branch_options) {
+        Ok(choice) => choice,
+        Err(_) => return Ok(false),
     };
 
     let (branch, new_branch_name) = match branch_choice {
@@ -613,6 +639,7 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 utils::print_warning("No branches found, creating from HEAD");
                 (None, None)
             } else {
+                // Start of branch selection logic
                 // Get branch to worktree mapping
                 let branch_worktree_map = manager.get_branch_worktree_map()?;
 
@@ -650,16 +677,11 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Use FuzzySelect for better search experience when there are many branches
                 let selection_result = if branch_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search branches (fuzzy search enabled):");
-                    FuzzySelect::with_theme(&get_theme())
-                        .with_prompt("Select a branch")
-                        .items(&branch_items)
-                        .interact_opt()?
+                    ui.fuzzy_select("Select a branch", &branch_items)
                 } else {
-                    Select::with_theme(&get_theme())
-                        .with_prompt("Select a branch")
-                        .items(&branch_items)
-                        .interact_opt()?
+                    ui.select("Select a branch", &branch_items)
                 };
+                let selection_result = selection_result.ok();
 
                 match selection_result {
                     Some(selection) => {
@@ -687,27 +709,23 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                     "Cancel".to_string(),
                                 ];
 
-                                match Select::with_theme(&get_theme())
-                                    .with_prompt("What would you like to do?")
-                                    .items(&action_options)
-                                    .interact_opt()?
-                                {
-                                    Some(ACTION_USE_WORKTREE_NAME) => {
+                                match ui.select("What would you like to do?", &action_options) {
+                                    Ok(ACTION_USE_WORKTREE_NAME) => {
                                         // Use worktree name as new branch name
                                         (Some(selected_branch.clone()), Some(name.clone()))
                                     }
-                                    Some(ACTION_CHANGE_BRANCH_NAME) => {
+                                    Ok(ACTION_CHANGE_BRANCH_NAME) => {
                                         // Ask for custom branch name
                                         println!();
-                                        let new_branch = match input_esc_with_default(
+                                        let new_branch = match ui.input_with_default(
                                             &format!(
                                                 "Enter new branch name (base: {})",
                                                 selected_branch.yellow()
                                             ),
                                             &name,
                                         ) {
-                                            Some(name) => name.trim().to_string(),
-                                            None => return Ok(false),
+                                            Ok(name) => name.trim().to_string(),
+                                            Err(_) => return Ok(false),
                                         };
 
                                         if new_branch.is_empty() {
@@ -761,19 +779,15 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                                     "Cancel".to_string(),
                                 ];
 
-                                match Select::with_theme(&get_theme())
-                                    .with_prompt("What would you like to do?")
-                                    .items(&action_options)
-                                    .interact_opt()?
-                                {
-                                    Some(ACTION_CREATE_NEW_BRANCH) => {
+                                match ui.select("What would you like to do?", &action_options) {
+                                    Ok(ACTION_CREATE_NEW_BRANCH) => {
                                         // Create new branch with worktree name
                                         (
                                             Some(format!("{GIT_REMOTE_PREFIX}{selected_branch}")),
                                             Some(name.clone()),
                                         )
                                     }
-                                    Some(ACTION_USE_LOCAL_BRANCH) => {
+                                    Ok(ACTION_USE_LOCAL_BRANCH) => {
                                         // Use local branch instead - but check if it's already in use
                                         if let Some(worktree) =
                                             branch_worktree_map.get(selected_branch)
@@ -832,16 +846,11 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
                 // Use FuzzySelect for better search experience when there are many tags
                 let selection_result = if tag_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search tags (fuzzy search enabled):");
-                    FuzzySelect::with_theme(&get_theme())
-                        .with_prompt("Select a tag")
-                        .items(&tag_items)
-                        .interact_opt()?
+                    ui.fuzzy_select("Select a tag", &tag_items)
                 } else {
-                    Select::with_theme(&get_theme())
-                        .with_prompt("Select a tag")
-                        .items(&tag_items)
-                        .interact_opt()?
+                    ui.select("Select a tag", &tag_items)
                 };
+                let selection_result = selection_result.ok();
 
                 match selection_result {
                     Some(selection) => {
@@ -955,10 +964,8 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
             // Ask if user wants to switch to the new worktree
             println!();
-            let switch = Confirm::with_theme(&get_theme())
-                .with_prompt("Switch to the new worktree?")
-                .default(true)
-                .interact_opt()?
+            let switch = ui
+                .confirm_with_default("Switch to the new worktree?", true)
                 .unwrap_or(false);
 
             if switch {
@@ -1026,14 +1033,16 @@ fn create_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
 /// - File system operations fail during deletion
 pub fn delete_worktree() -> Result<()> {
     let manager = GitWorktreeManager::new()?;
-    delete_worktree_internal(&manager)
+    let ui = DialoguerUI;
+    delete_worktree_with_ui(&manager, &ui)
 }
 
-/// Internal implementation of delete_worktree
+/// Internal implementation of delete_worktree with dependency injection
 ///
 /// # Arguments
 ///
 /// * `manager` - Git worktree manager instance
+/// * `ui` - User interface implementation for testability
 ///
 /// # Deletion Process
 ///
@@ -1043,7 +1052,7 @@ pub fn delete_worktree() -> Result<()> {
 /// 4. Confirms deletion with detailed preview
 /// 5. Executes pre-remove hooks
 /// 6. Performs deletion of worktree and optionally branch
-fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
+pub fn delete_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterface) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
@@ -1082,13 +1091,9 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
 
-    let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select a worktree to delete (ESC to cancel)")
-        .items(&items)
-        .interact_opt()?
-    {
-        Some(selection) => selection,
-        None => return Ok(()),
+    let selection = match ui.select("Select a worktree to delete (ESC to cancel)", &items) {
+        Ok(selection) => selection,
+        Err(_) => return Ok(()),
     };
 
     let worktree_to_delete = deletable_worktrees[selection];
@@ -1113,18 +1118,14 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     if manager.is_branch_unique_to_worktree(&worktree_to_delete.branch, &worktree_to_delete.name)? {
         let msg = "This branch is only used by this worktree.".yellow();
         println!("{msg}");
-        delete_branch = Confirm::with_theme(&get_theme())
-            .with_prompt("Also delete the branch?")
-            .default(false)
-            .interact_opt()?
+        delete_branch = ui
+            .confirm_with_default("Also delete the branch?", false)
             .unwrap_or(false);
         println!();
     }
 
-    let confirm = Confirm::with_theme(&get_theme())
-        .with_prompt("Are you sure you want to delete this worktree?")
-        .default(false)
-        .interact_opt()?
+    let confirm = ui
+        .confirm_with_default("Are you sure you want to delete this worktree?", false)
         .unwrap_or(false);
 
     if !confirm {
@@ -1203,19 +1204,24 @@ fn delete_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
 /// - File write operations fail
 pub fn switch_worktree() -> Result<bool> {
     let manager = GitWorktreeManager::new()?;
-    switch_worktree_internal(&manager)
+    let ui = DialoguerUI;
+    switch_worktree_with_ui(&manager, &ui)
 }
 
-/// Internal implementation of switch_worktree
+/// Internal implementation of switch_worktree with dependency injection
 ///
 /// # Arguments
 ///
 /// * `manager` - Git worktree manager instance
+/// * `ui` - User interface implementation for testability
 ///
 /// # Returns
 ///
 /// Returns `true` if a switch occurred, `false` if cancelled or already in selected worktree
-fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
+pub fn switch_worktree_with_ui(
+    manager: &GitWorktreeManager,
+    ui: &dyn UserInterface,
+) -> Result<bool> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
@@ -1255,14 +1261,7 @@ fn switch_worktree_internal(manager: &GitWorktreeManager) -> Result<bool> {
         })
         .collect();
 
-    let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select a worktree to switch to (ESC to cancel)")
-        .items(&items)
-        .interact_opt()?
-    {
-        Some(selection) => selection,
-        None => return Ok(false),
-    };
+    let selection = ui.select("Select a worktree to switch to (ESC to cancel)", &items)?;
 
     let selected_worktree = &sorted_worktrees[selection];
 
@@ -1686,14 +1685,16 @@ fn cleanup_old_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
 /// - New name conflicts with existing worktree
 pub fn rename_worktree() -> Result<()> {
     let manager = GitWorktreeManager::new()?;
-    rename_worktree_internal(&manager)
+    let ui = DialoguerUI;
+    rename_worktree_with_ui(&manager, &ui)
 }
 
-/// Internal implementation of rename_worktree
+/// Internal implementation of rename_worktree with dependency injection
 ///
 /// # Arguments
 ///
 /// * `manager` - Git worktree manager instance
+/// * `ui` - User interface implementation for testability
 ///
 /// # Implementation Details
 ///
@@ -1701,7 +1702,7 @@ pub fn rename_worktree() -> Result<()> {
 /// - Updates .git/worktrees/`<name>` metadata
 /// - Updates gitdir references
 /// - Optionally renames associated branch
-fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
+pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterface) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
     if worktrees.is_empty() {
@@ -1740,24 +1741,16 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
 
-    let selection = match Select::with_theme(&get_theme())
-        .with_prompt("Select a worktree to rename (ESC to cancel)")
-        .items(&items)
-        .interact_opt()?
-    {
-        Some(selection) => selection,
-        None => return Ok(()),
-    };
+    let selection = ui.select("Select a worktree to rename (ESC to cancel)", &items)?;
 
     let worktree = renameable_worktrees[selection];
 
     // Get new name
     println!();
-    let new_name =
-        match input_esc(format!("New name for '{}' (ESC to cancel)", worktree.name).as_str()) {
-            Some(name) => name.trim().to_string(),
-            None => return Ok(()),
-        };
+    let new_name = ui
+        .input(&format!("New name for '{}' (ESC to cancel)", worktree.name))?
+        .trim()
+        .to_string();
 
     if new_name.is_empty() {
         utils::print_error("Name cannot be empty");
@@ -1787,11 +1780,7 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
             || worktree.branch == format!("feature/{}", worktree.name))
     {
         println!();
-        Confirm::with_theme(&get_theme())
-            .with_prompt("Also rename the associated branch?")
-            .default(true)
-            .interact_opt()?
-            .unwrap_or(false)
+        ui.confirm_with_default("Also rename the associated branch?", true)?
     } else {
         false
     };
@@ -1824,11 +1813,7 @@ fn rename_worktree_internal(manager: &GitWorktreeManager) -> Result<()> {
     }
 
     println!();
-    let confirm = Confirm::with_theme(&get_theme())
-        .with_prompt("Proceed with rename?")
-        .default(false)
-        .interact_opt()?
-        .unwrap_or(false);
+    let confirm = ui.confirm_with_default("Proceed with rename?", false)?;
 
     if !confirm {
         return Ok(());
@@ -2174,7 +2159,23 @@ pub fn validate_custom_path(path: &str) -> Result<()> {
 /// # Returns
 ///
 /// The path where the configuration file should be located or created.
-fn find_config_file_path(repo: &git2::Repository) -> Result<std::path::PathBuf> {
+/// Finds the configuration file path for the given GitWorktreeManager
+///
+/// # Arguments
+///
+/// * `manager` - The GitWorktreeManager instance
+///
+/// # Returns
+///
+/// Returns the path to the configuration file if found
+#[allow(dead_code)]
+pub fn find_config_file_path(manager: &GitWorktreeManager) -> Result<Option<std::path::PathBuf>> {
+    find_config_file_path_internal(&manager.repo)
+        .map(Some)
+        .or_else(|_| Ok(None))
+}
+
+fn find_config_file_path_internal(repo: &git2::Repository) -> Result<std::path::PathBuf> {
     use crate::utils::find_default_branch_directory;
 
     if repo.is_bare() {
@@ -2437,7 +2438,7 @@ pub fn edit_hooks() -> Result<()> {
 
     // Find the config file location using the same logic as Config::load()
     let config_path = if let Ok(repo) = git2::Repository::discover(".") {
-        find_config_file_path(&repo)?
+        find_config_file_path_internal(&repo)?
     } else {
         utils::print_error("Not in a git repository");
         println!();
