@@ -3,11 +3,14 @@ use git2::{Repository, Signature};
 use std::process::Command;
 use tempfile::TempDir;
 
-use git_workers::git::GitWorktreeManager;
+use git_workers::{
+    constants::{ERROR_WORKTREE_CREATE, TEST_AUTHOR_EMAIL},
+    git::GitWorktreeManager,
+};
 
 /// Helper function to create initial commit
 fn create_initial_commit(repo: &Repository) -> Result<()> {
-    let sig = Signature::now("Test User", "test@example.com")?;
+    let sig = Signature::now("Test User", TEST_AUTHOR_EMAIL)?;
     let tree_id = {
         let mut index = repo.index()?;
         index.write_tree()?
@@ -114,10 +117,13 @@ fn test_rename_worktree_git_command_creation() -> Result<()> {
 
     if !output.status.success() {
         eprintln!(
-            "Failed to create worktree: {}",
+            "{}: {}",
+            ERROR_WORKTREE_CREATE.replace("{}", "feature-branch"),
             String::from_utf8_lossy(&output.stderr)
         );
-        return Err(anyhow::anyhow!("Failed to create worktree"));
+        return Err(anyhow::anyhow!(
+            ERROR_WORKTREE_CREATE.replace("{}", "feature-branch")
+        ));
     }
 
     let manager = GitWorktreeManager::new_from_path(&repo_path)?;

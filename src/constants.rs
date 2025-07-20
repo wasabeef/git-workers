@@ -46,6 +46,10 @@ pub const DEFAULT_BRANCH_DETACHED: &str = "detached";
 pub const DEFAULT_AUTHOR_UNKNOWN: &str = "Unknown";
 pub const DEFAULT_MESSAGE_NONE: &str = "No message";
 
+// Git commit info defaults (used in git.rs)
+pub const GIT_COMMIT_AUTHOR_UNKNOWN: &str = "Unknown";
+pub const GIT_COMMIT_MESSAGE_NONE: &str = "No message";
+
 // Time Format
 pub const TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
@@ -210,10 +214,50 @@ pub const PROMPT_DELETE_WORKTREE: &str = "Are you sure you want to delete worktr
 pub const PROMPT_RENAME_BRANCH: &str = "Rename branch '{}' to '{}' as well?";
 pub const PROMPT_NEW_WORKTREE_NAME: &str = "New worktree name";
 pub const PROMPT_CLEANUP_CONFIRM: &str = "Delete {} worktrees?";
+pub const PROMPT_CONFLICT_ACTION: &str = "What would you like to do?";
 
 // Success messages
 pub const SUCCESS_WORKTREE_CREATED: &str = "Worktree created successfully!";
 pub const SUCCESS_OPERATION_COMPLETED: &str = "Operation completed!";
+
+// Additional UI messages
+pub const MSG_CREATING_FIRST_WORKTREE: &str = "Creating first worktree...";
+pub const MSG_PRESS_ESC_TO_CANCEL: &str = " (ESC to cancel)";
+
+// Git error messages
+pub const GIT_BRANCH_NOT_FOUND_MSG: &str = "Branch '{}' not found";
+pub const GIT_CANNOT_RENAME_CURRENT: &str =
+    "Cannot rename current worktree. Please switch to another worktree first.";
+pub const GIT_WORKTREE_NOT_FOUND: &str = "Worktree not found: {}";
+pub const GIT_INVALID_BRANCH_NAME: &str = "Invalid branch name: {}";
+
+// Emoji icons
+pub const EMOJI_HOME: &str = "🏠";
+pub const EMOJI_LOCKED: &str = "🔒";
+pub const EMOJI_BRANCH: &str = "🌿";
+pub const EMOJI_DETACHED: &str = "🔗";
+pub const EMOJI_FOLDER: &str = "📁";
+
+// File operations
+pub const FILE_COPY_COPYING_FILES: &str = "Copying configured files...";
+pub const FILE_COPY_NO_FILES: &str = "No files were copied";
+pub const FILE_COPY_SKIPPED_LARGE: &str = "Skipping large file";
+pub const FILE_COPY_FAILED: &str = "Failed to copy";
+pub const FILE_COPY_SKIPPING_UNSAFE: &str = "Skipping unsafe path";
+pub const FILE_COPY_NOT_FOUND: &str = "Not found";
+pub const FILE_COPY_COPIED_SUCCESS: &str = "Copied";
+pub const SIZE_UNIT_MB: &str = "MB";
+
+// Error detection patterns
+pub const ERROR_NO_SUCH_FILE: &str = "No such file or directory";
+pub const ERROR_NOT_FOUND: &str = "not found";
+
+// Main worktree detection
+pub const MAIN_WORKTREE_NAMES: &[&str] = &["main", "master"];
+
+// File size formatting
+pub const FILE_SIZE_MB_SUFFIX: &str = " MB";
+pub const FILE_SIZE_DECIMAL_PLACES: usize = 1;
 
 // Warning messages
 pub const WARNING_NO_WORKTREES: &str = "• No worktrees found.";
@@ -295,6 +339,31 @@ pub const MENU_EXIT: &str = "x  Exit";
 pub const OPTION_CREATE_FROM_HEAD: &str = "Create from current HEAD";
 pub const OPTION_SELECT_BRANCH: &str = "Select existing branch";
 pub const OPTION_SELECT_TAG: &str = "Select tag";
+
+// Default selection indices
+pub const DEFAULT_MENU_SELECTION: usize = 0;
+
+// Section headers
+pub const HEADER_WORKTREES: &str = "Worktrees";
+pub const HEADER_SEARCH_WORKTREES: &str = "Search Worktrees";
+pub const HEADER_CREATE_WORKTREE: &str = "Create New Worktree";
+
+// Input prompts (additional)
+pub const PROMPT_SELECT_WORKTREE_SWITCH: &str = "Select a worktree to switch to";
+pub const PROMPT_SELECT_WORKTREE_LOCATION: &str = "Select worktree location pattern";
+pub const PROMPT_SELECT_BRANCH_OPTION: &str = "Select branch option";
+
+// Environment variables
+pub const ENV_EDITOR: &str = "EDITOR";
+pub const ENV_VISUAL: &str = "VISUAL";
+
+// Default editors
+pub const DEFAULT_EDITOR_WINDOWS: &str = "notepad";
+pub const DEFAULT_EDITOR_UNIX: &str = "vi";
+
+// Error messages (additional)
+pub const ERROR_WORKTREE_NAME_EMPTY: &str = "Worktree name cannot be empty";
+pub const ERROR_CUSTOM_PATH_EMPTY: &str = "Custom path cannot be empty";
 
 // Worktree location options
 pub const OPTION_SAME_LEVEL: &str = "Same level as repository";
@@ -407,3 +476,175 @@ pub const GIT_URL_SUFFIX: &str = ".git";
 // Path component indices and minimums
 pub const PATH_COMPONENT_SECOND_INDEX: usize = 1;
 pub const MIN_PATH_COMPONENTS_FOR_SUBDIR: usize = 1;
+
+// Additional constants that were identified during hardcode audit
+pub const MSG_NO_WORKTREES_TO_SEARCH: &str = "• No worktrees to search.";
+pub const MSG_SEARCH_FUZZY_ENABLED: &str = "Type to search worktrees (fuzzy search enabled):";
+pub const MSG_ALREADY_IN_WORKTREE: &str = "• Already in this worktree.";
+pub const SEARCH_CURRENT_INDICATOR: &str = " (current)";
+
+// File copy operation constants
+pub const FILE_COPY_SAME_DIRECTORY: &str = "Source and destination are the same directory";
+pub const FILE_COPY_SKIPPING_LARGE: &str = "Skipping large file";
+
+// Pluralization helpers
+pub const PLURAL_EMPTY: &str = "";
+pub const PLURAL_S: &str = "s";
+
+// Git operation error messages
+pub const GIT_CANNOT_FIND_PARENT: &str = "Cannot find parent directory";
+pub const GIT_CANNOT_RENAME_DETACHED: &str = "Cannot rename worktree with detached HEAD";
+pub const GIT_NEW_NAME_NO_SPACES: &str = "New name cannot contain spaces";
+
+// Additional hardcoded values found in fourth audit
+// Error context messages
+pub const ERROR_FAILED_TO_CREATE_PARENT_DIR: &str = "Failed to create parent directory: ";
+pub const ERROR_FAILED_TO_COPY_FILE: &str = "Failed to copy file from {} to {}";
+pub const ERROR_FAILED_TO_CREATE_DIR: &str = "Failed to create directory: ";
+pub const ERROR_SOURCE_PATH_NOT_FOUND: &str = "Source path not found: ";
+pub const ERROR_SOURCE_NOT_FILE_OR_DIR: &str = "Source is neither a file nor a directory: ";
+pub const ERROR_MAX_DEPTH_EXCEEDED: &str =
+    "Maximum directory depth ({}) exceeded. Possible circular reference.";
+pub const ERROR_GIT_DIR_NO_PARENT: &str = "Git directory has no parent";
+pub const ERROR_NO_MAIN_WORKTREE_FOUND: &str = "No main worktree found with {} file";
+pub const ERROR_REPO_NO_WORKING_DIR: &str = "Repository has no working directory";
+
+// Info messages
+pub const INFO_SKIPPING_SYMLINK: &str = "Skipping symlink: ";
+pub const INFO_SKIPPING_CIRCULAR_REF: &str = "Skipping circular reference: ";
+pub const INFO_FAILED_TO_COPY: &str = "Failed to copy";
+
+// Git references
+pub const GIT_REFS_HEADS: &str = "refs/heads/";
+
+// Git command arguments
+pub const GIT_ARG_TRACK: &str = "--track";
+pub const GIT_ARG_NO_TRACK: &str = "--no-track";
+pub const GIT_ARG_NO_GUESS_REMOTE: &str = "--no-guess-remote";
+
+// File permissions
+pub const FILE_PERMISSION_READONLY: u32 = 0o444;
+pub const FILE_PERMISSION_READWRITE: u32 = 0o644;
+
+// Directory names
+pub const MOCK_GIT_DIR: &str = ".mockgit";
+
+// Test-specific constants
+pub const TEST_AUTHOR_NAME: &str = "Test Author";
+pub const TEST_AUTHOR_EMAIL: &str = "test@example.com";
+pub const TEST_COMMIT_MESSAGE: &str = "Test commit";
+pub const TEST_README_FILE: &str = "README.md";
+pub const TEST_README_CONTENT: &str = "# Test";
+pub const TEST_CONFIG_CONTENT: &str = "[files]\ncopy = [\".env\"]";
+pub const TEST_ENV_CONTENT: &str = "TEST=1";
+pub const TEST_GITIGNORE_CONTENT: &str = ".env";
+
+// Hook execution messages
+pub const HOOK_EXECUTING: &str = "Executing hook: ";
+pub const HOOK_OUTPUT: &str = "Hook output: ";
+
+// Symlink warning icon
+pub const ICON_SYMLINK_WARNING: &str = "⚠️";
+
+// Git file names
+pub const GIT_FILE_GITDIR: &str = "gitdir";
+pub const GIT_FILE_COMMONDIR: &str = "commondir";
+
+// Special file names
+pub const FILE_DOT_ENV: &str = ".env";
+pub const FILE_DOT_ENV_EXAMPLE: &str = ".env.example";
+
+// Array slice ranges
+pub const SLICE_START: usize = 0;
+pub const SLICE_END_ONE: usize = 1;
+
+// Time units
+pub const SECONDS_IN_DAY: u64 = 86400;
+
+// Default branch names array (for iteration)
+pub const DEFAULT_BRANCHES: &[&str] = &["main", "master"];
+
+// Worktree list header format
+pub const WORKTREE_LIST_HEADER: &str = "worktree ";
+
+// Git command error patterns
+pub const GIT_ERROR_INVALID_REF: &str = "is not a valid ref";
+pub const GIT_ERROR_NOT_VALID_REF: &str = "not a valid ref";
+
+// Progress messages
+pub const PROGRESS_CREATING_WORKTREE: &str = "Creating worktree";
+pub const PROGRESS_COPYING_FILES: &str = "Copying files";
+pub const PROGRESS_RUNNING_HOOKS: &str = "Running hooks";
+
+// Validation error prefixes
+pub const VALIDATION_ERROR_PREFIX: &str = "Validation failed: ";
+
+// File operation prefixes
+pub const FILE_OP_COPYING: &str = "Copying: ";
+pub const FILE_OP_SKIPPING: &str = "Skipping: ";
+pub const FILE_OP_CREATED: &str = "Created: ";
+
+// Git status prefixes
+pub const GIT_STATUS_BRANCH: &str = "branch ";
+pub const GIT_STATUS_HEAD: &str = "HEAD ";
+
+// Menu display formats
+pub const MENU_FORMAT_WITH_ICON: &str = "{}  {}";
+pub const MENU_FORMAT_SIMPLE: &str = "{}";
+
+// Error detail separators
+pub const ERROR_DETAIL_SEPARATOR: &str = ": ";
+pub const ERROR_CONTEXT_SEPARATOR: &str = " - ";
+
+// Path join separators
+pub const PATH_JOIN_SLASH: &str = "/";
+
+// Git output parsing
+pub const GIT_OUTPUT_SPLIT_CHAR: char = '\n';
+pub const GIT_OUTPUT_TAB_CHAR: char = '\t';
+
+// Number formatting
+pub const DECIMAL_FORMAT_ONE: &str = ".1";
+pub const DECIMAL_FORMAT_TWO: &str = ".2";
+
+// Boolean string values
+pub const BOOL_TRUE_STR: &str = "true";
+pub const BOOL_FALSE_STR: &str = "false";
+
+// Exit messages
+pub const EXIT_MSG_GOODBYE: &str = "Goodbye!";
+pub const EXIT_MSG_CANCELLED: &str = "Cancelled.";
+
+// Prompt suffixes
+pub const PROMPT_SUFFIX_COLON: &str = ": ";
+pub const PROMPT_SUFFIX_QUESTION: &str = "? ";
+
+// Display list bullet
+pub const DISPLAY_BULLET: &str = "• ";
+
+// Git worktree states
+pub const WORKTREE_STATE_BARE: &str = "bare";
+pub const WORKTREE_STATE_DETACHED: &str = "detached";
+pub const WORKTREE_STATE_BRANCH: &str = "branch";
+
+// Error recovery suggestions
+pub const SUGGEST_CHECK_PATH: &str = "Please check the path and try again.";
+pub const SUGGEST_CHECK_PERMISSIONS: &str = "Please check file permissions.";
+
+// Confirmation prompts
+pub const CONFIRM_CONTINUE: &str = "Continue?";
+pub const CONFIRM_PROCEED: &str = "Proceed?";
+
+// Status indicators
+pub const STATUS_OK: &str = "[OK]";
+pub const STATUS_FAILED: &str = "[FAILED]";
+pub const STATUS_SKIPPED: &str = "[SKIPPED]";
+
+// Git refspec patterns
+pub const REFSPEC_HEADS: &str = "+refs/heads/*:refs/remotes/origin/*";
+
+// Common file extensions
+pub const EXT_TOML: &str = ".toml";
+pub const EXT_JSON: &str = ".json";
+pub const EXT_YAML: &str = ".yaml";
+pub const EXT_YML: &str = ".yml";

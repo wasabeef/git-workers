@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use git_workers::commands::{find_config_file_path, get_worktree_icon, validate_custom_path};
+use git_workers::constants::{self, EMOJI_HOME};
 use git_workers::git::{GitWorktreeManager, WorktreeInfo};
 use git_workers::ui::MockUI;
 use std::fs;
@@ -48,7 +49,7 @@ fn test_get_worktree_icon_current_worktree() -> Result<()> {
     let icon = get_worktree_icon(&worktree);
 
     // Should return current worktree icon
-    assert_eq!(icon, "🏠"); // Expected current worktree icon
+    assert_eq!(icon, EMOJI_HOME); // Expected current worktree icon
 
     Ok(())
 }
@@ -241,17 +242,20 @@ fn test_create_worktree_branch_conflict_resolution() -> Result<()> {
         .output()?;
 
     // Create initial commit
-    fs::write(temp_dir.path().join("README.md"), "# Test")?;
+    fs::write(
+        temp_dir.path().join(constants::TEST_README_FILE),
+        constants::TEST_README_CONTENT,
+    )?;
     std::process::Command::new("git")
-        .args(["add", "README.md"])
+        .args(["add", constants::TEST_README_FILE])
         .current_dir(temp_dir.path())
         .output()?;
     std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .env("GIT_AUTHOR_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_AUTHOR_EMAIL", constants::TEST_AUTHOR_EMAIL)
+        .env("GIT_COMMITTER_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_COMMITTER_EMAIL", constants::TEST_AUTHOR_EMAIL)
         .current_dir(temp_dir.path())
         .output()?;
 
@@ -285,17 +289,20 @@ fn test_create_worktree_remote_branch_exists_locally() -> Result<()> {
         .output()?;
 
     // Create initial commit
-    fs::write(temp_dir.path().join("README.md"), "# Test")?;
+    fs::write(
+        temp_dir.path().join(constants::TEST_README_FILE),
+        constants::TEST_README_CONTENT,
+    )?;
     std::process::Command::new("git")
-        .args(["add", "README.md"])
+        .args(["add", constants::TEST_README_FILE])
         .current_dir(temp_dir.path())
         .output()?;
     std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .env("GIT_AUTHOR_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_AUTHOR_EMAIL", constants::TEST_AUTHOR_EMAIL)
+        .env("GIT_COMMITTER_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_COMMITTER_EMAIL", constants::TEST_AUTHOR_EMAIL)
         .current_dir(temp_dir.path())
         .output()?;
 
@@ -323,17 +330,20 @@ fn test_batch_delete_worktrees_edge_cases() -> Result<()> {
         .output()?;
 
     // Create initial commit
-    fs::write(temp_dir.path().join("README.md"), "# Test")?;
+    fs::write(
+        temp_dir.path().join(constants::TEST_README_FILE),
+        constants::TEST_README_CONTENT,
+    )?;
     std::process::Command::new("git")
-        .args(["add", "README.md"])
+        .args(["add", constants::TEST_README_FILE])
         .current_dir(temp_dir.path())
         .output()?;
     std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .env("GIT_AUTHOR_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_AUTHOR_EMAIL", constants::TEST_AUTHOR_EMAIL)
+        .env("GIT_COMMITTER_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_COMMITTER_EMAIL", constants::TEST_AUTHOR_EMAIL)
         .current_dir(temp_dir.path())
         .output()?;
 
@@ -371,17 +381,20 @@ fn test_search_worktrees_fuzzy_matching() -> Result<()> {
         .output()?;
 
     // Create initial commit
-    fs::write(temp_dir.path().join("README.md"), "# Test")?;
+    fs::write(
+        temp_dir.path().join(constants::TEST_README_FILE),
+        constants::TEST_README_CONTENT,
+    )?;
     std::process::Command::new("git")
-        .args(["add", "README.md"])
+        .args(["add", constants::TEST_README_FILE])
         .current_dir(temp_dir.path())
         .output()?;
     std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .env("GIT_AUTHOR_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_AUTHOR_EMAIL", constants::TEST_AUTHOR_EMAIL)
+        .env("GIT_COMMITTER_NAME", constants::TEST_AUTHOR_NAME)
+        .env("GIT_COMMITTER_EMAIL", constants::TEST_AUTHOR_EMAIL)
         .current_dir(temp_dir.path())
         .output()?;
 

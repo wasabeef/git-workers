@@ -295,7 +295,7 @@ fn test_prompt_formatting_logic() {
     use git_workers::constants::*;
 
     // Test basic prompt construction
-    let prompt = "Enter worktree name";
+    let prompt = PROMPT_WORKTREE_NAME;
     let formatted_prompt = format!("{ICON_QUESTION} {prompt} ");
 
     assert!(formatted_prompt.contains(ICON_QUESTION));
