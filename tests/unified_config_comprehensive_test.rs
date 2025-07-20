@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 use git2::Repository;
+use git_workers::constants::{TEST_AUTHOR_EMAIL, TEST_README_CONTENT, TEST_README_FILE};
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -23,7 +24,7 @@ fn setup_test_repo() -> Result<(TempDir, PathBuf)> {
 
     // Configure git
     std::process::Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
+        .args(["config", "user.email", TEST_AUTHOR_EMAIL])
         .current_dir(&repo_path)
         .output()?;
 
@@ -33,7 +34,7 @@ fn setup_test_repo() -> Result<(TempDir, PathBuf)> {
         .output()?;
 
     // Create initial commit
-    fs::write(repo_path.join("README.md"), "# Test Repo")?;
+    fs::write(repo_path.join(TEST_README_FILE), TEST_README_CONTENT)?;
     std::process::Command::new("git")
         .args(["add", "."])
         .current_dir(&repo_path)
@@ -50,15 +51,15 @@ fn setup_test_repo() -> Result<(TempDir, PathBuf)> {
 /// Helper to create initial commit for repository
 #[allow(dead_code)]
 fn create_initial_commit(repo: &Repository) -> Result<()> {
-    let signature = git2::Signature::now("Test User", "test@example.com")?;
+    let signature = git2::Signature::now("Test User", TEST_AUTHOR_EMAIL)?;
 
     // Create a file
     let workdir = repo.workdir().unwrap();
-    fs::write(workdir.join("README.md"), "# Test Repository")?;
+    fs::write(workdir.join(TEST_README_FILE), "# Test Repository")?;
 
     // Add file to index
     let mut index = repo.index()?;
-    index.add_path(std::path::Path::new("README.md"))?;
+    index.add_path(std::path::Path::new(TEST_README_FILE))?;
     index.write()?;
 
     // Create tree

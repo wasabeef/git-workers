@@ -1,4 +1,7 @@
-use git_workers::git::{CommitInfo, WorktreeInfo};
+use git_workers::{
+    constants::{TEST_AUTHOR_NAME, TEST_COMMIT_MESSAGE},
+    git::{CommitInfo, WorktreeInfo},
+};
 use std::path::{Path, PathBuf};
 
 #[test]
@@ -50,8 +53,8 @@ fn test_worktree_info_struct_all_fields() {
     // Test with all fields having non-default values
     let last_commit = CommitInfo {
         id: "abc123".to_string(),
-        message: "Test commit".to_string(),
-        author: "Test Author".to_string(),
+        message: TEST_COMMIT_MESSAGE.to_string(),
+        author: TEST_AUTHOR_NAME.to_string(),
         time: "2024-01-01 10:00".to_string(),
     };
 
@@ -78,8 +81,8 @@ fn test_worktree_info_struct_all_fields() {
 
     let commit = info.last_commit.unwrap();
     assert_eq!(commit.id, "abc123");
-    assert_eq!(commit.message, "Test commit");
-    assert_eq!(commit.author, "Test Author");
+    assert_eq!(commit.message, TEST_COMMIT_MESSAGE);
+    assert_eq!(commit.author, TEST_AUTHOR_NAME);
     assert_eq!(commit.time, "2024-01-01 10:00");
 
     assert_eq!(info.ahead_behind, Some((5, 3)));

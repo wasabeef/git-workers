@@ -275,9 +275,10 @@ fn test_get_repository_info_bare_repo_with_worktrees() -> Result<()> {
     // Test from worktree created from bare repo
     std::env::set_current_dir(&worktree_path)?;
     let worktree_info = get_repository_info();
+    // The worktree should show parent repo name with worktree name
     assert!(
-        worktree_info.contains("feature") || worktree_info == "bare-worktree",
-        "Expected info to contain 'feature' or equal 'bare-worktree', got: {worktree_info}"
+        worktree_info.ends_with(" (bare-worktree)"),
+        "Expected info to end with ' (bare-worktree)', got: {worktree_info}"
     );
 
     Ok(())
@@ -317,9 +318,10 @@ fn test_get_repository_info_worktree_special_names() -> Result<()> {
         // Test from worktree
         std::env::set_current_dir(&worktree_path)?;
         let worktree_info = get_repository_info();
+        // The worktree should show parent repo name with worktree name
         assert!(
-            worktree_info.contains(branch_name) || worktree_info == worktree_dir,
-            "Failed for branch {branch_name}, worktree {worktree_dir}, got: {worktree_info}"
+            worktree_info.ends_with(&format!(" ({worktree_dir})")),
+            "Failed for branch {branch_name}, worktree {worktree_dir}, expected to end with ' ({worktree_dir})', got: {worktree_info}"
         );
 
         // Clean up worktree for next iteration

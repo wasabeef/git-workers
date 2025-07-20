@@ -44,8 +44,10 @@ use crate::constants::{
     DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, ERROR_LOCK_CREATE, ERROR_LOCK_EXISTS,
     ERROR_NO_PARENT_BARE_REPO, ERROR_NO_PARENT_DIR, ERROR_NO_REPO_DIR, ERROR_NO_REPO_WORKING_DIR,
     ERROR_NO_WORKING_DIR, ERROR_WORKTREE_CREATE, ERROR_WORKTREE_PATH_EXISTS, GIT_ADD, GIT_BRANCH,
-    GIT_CMD, GIT_DEFAULT_MAIN_WORKTREE, GIT_DIR, GIT_GITDIR_PREFIX, GIT_GITDIR_SUFFIX,
-    GIT_HEAD_INDEX, GIT_OPT_BRANCH, GIT_OPT_GIT_COMMON_DIR, GIT_OPT_RENAME, GIT_ORIGIN,
+    GIT_BRANCH_NOT_FOUND_MSG, GIT_CANNOT_FIND_PARENT, GIT_CANNOT_RENAME_CURRENT,
+    GIT_CANNOT_RENAME_DETACHED, GIT_CMD, GIT_COMMIT_AUTHOR_UNKNOWN, GIT_COMMIT_MESSAGE_NONE,
+    GIT_DEFAULT_MAIN_WORKTREE, GIT_DIR, GIT_GITDIR_PREFIX, GIT_GITDIR_SUFFIX, GIT_HEAD_INDEX,
+    GIT_NEW_NAME_NO_SPACES, GIT_OPT_BRANCH, GIT_OPT_GIT_COMMON_DIR, GIT_OPT_RENAME, GIT_ORIGIN,
     GIT_REFS_REMOTES, GIT_REFS_TAGS, GIT_REPAIR, GIT_RESERVED_NAMES, GIT_REV_PARSE, GIT_WORKTREE,
     LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT, WINDOW_FIRST_INDEX, WINDOW_SECOND_INDEX,
     WINDOW_SIZE_PAIRS,
@@ -1098,7 +1100,7 @@ impl GitWorktreeManager {
                 branch.delete()?;
                 Ok(())
             }
-            Err(_) => Err(anyhow!("Branch '{branch_name}' not found")),
+            Err(_) => Err(anyhow!(GIT_BRANCH_NOT_FOUND_MSG.replace("{}", branch_name))),
         }
     }
 
@@ -1222,12 +1224,19 @@ impl GitWorktreeManager {
         let head = repo.head()?.peel_to_commit()?;
         let time = chrono::DateTime::from_timestamp(head.time().seconds(), 0)
             .unwrap_or_default()
-            .format("%Y-%m-%d %H:%M")
+            .format(TIME_FORMAT)
             .to_string();
 
-        let id = head.id().to_string()[..8].to_string();
-        let message = head.summary().unwrap_or("No message").to_string();
-        let author = head.author().name().unwrap_or("Unknown").to_string();
+        let id = head.id().to_string()[..COMMIT_ID_SHORT_LENGTH].to_string();
+        let message = head
+            .summary()
+            .unwrap_or(GIT_COMMIT_MESSAGE_NONE)
+            .to_string();
+        let author = head
+            .author()
+            .name()
+            .unwrap_or(GIT_COMMIT_AUTHOR_UNKNOWN)
+            .to_string();
 
         Ok(CommitInfo {
             id,
@@ -1286,7 +1295,7 @@ impl GitWorktreeManager {
 
         // Validate new name
         if new_name.contains(char::is_whitespace) {
-            return Err(anyhow!("New name cannot contain spaces"));
+            return Err(anyhow!(GIT_NEW_NAME_NO_SPACES));
         }
 
         // Get the old worktree info
@@ -1296,7 +1305,7 @@ impl GitWorktreeManager {
         // Generate new path
         let new_path = old_path
             .parent()
-            .ok_or_else(|| anyhow!("Cannot find parent directory"))?
+            .ok_or_else(|| anyhow!(GIT_CANNOT_FIND_PARENT))?
             .join(new_name);
 
         if new_path.exists() {
@@ -1309,16 +1318,14 @@ impl GitWorktreeManager {
         // Check if it's the current worktree
         let is_current = self.is_current_worktree(&old_path);
         if is_current {
-            return Err(anyhow!(
-                "Cannot rename current worktree. Please switch to another worktree first."
-            ));
+            return Err(anyhow!(GIT_CANNOT_RENAME_CURRENT));
         }
 
         // Validate the worktree is not in detached HEAD state
         if let Ok(wt_repo) = Repository::open(&old_path) {
             if let Ok(head) = wt_repo.head() {
                 if !head.is_branch() {
-                    return Err(anyhow!("Cannot rename worktree with detached HEAD"));
+                    return Err(anyhow!(GIT_CANNOT_RENAME_DETACHED));
                 }
             } else {
                 return Err(anyhow!("Cannot read worktree HEAD"));

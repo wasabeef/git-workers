@@ -5,7 +5,10 @@
 
 use anyhow::Result;
 use git2::Repository;
-use git_workers::git::{CommitInfo, GitWorktreeManager, WorktreeInfo};
+use git_workers::{
+    constants::{TEST_AUTHOR_NAME, TEST_COMMIT_MESSAGE, TEST_README_CONTENT, TEST_README_FILE},
+    git::{CommitInfo, GitWorktreeManager, WorktreeInfo},
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -45,7 +48,7 @@ fn setup_test_repo() -> Result<(TempDir, PathBuf, GitWorktreeManager)> {
         .output()?;
 
     // Create initial commit
-    fs::write(repo_path.join("README.md"), "# Test Repo")?;
+    fs::write(repo_path.join(TEST_README_FILE), TEST_README_CONTENT)?;
     std::process::Command::new("git")
         .args(["add", "."])
         .current_dir(&repo_path)
@@ -68,7 +71,7 @@ fn create_initial_commit(repo: &Repository) -> Result<()> {
 
     // Create a file
     let workdir = repo.workdir().unwrap();
-    fs::write(workdir.join("README.md"), "# Test Repository")?;
+    fs::write(workdir.join(TEST_README_FILE), "# Test Repository")?;
 
     // Add file to index
     let mut index = repo.index()?;
@@ -160,14 +163,14 @@ fn test_git_worktree_manager_from_subdirectory() -> Result<()> {
 fn test_commit_info_struct() {
     let commit = CommitInfo {
         id: "abc123".to_string(),
-        message: "Test commit".to_string(),
-        author: "Test Author".to_string(),
+        message: TEST_COMMIT_MESSAGE.to_string(),
+        author: TEST_AUTHOR_NAME.to_string(),
         time: "2024-01-01 10:00".to_string(),
     };
 
     assert_eq!(commit.id, "abc123");
-    assert_eq!(commit.message, "Test commit");
-    assert_eq!(commit.author, "Test Author");
+    assert_eq!(commit.message, TEST_COMMIT_MESSAGE);
+    assert_eq!(commit.author, TEST_AUTHOR_NAME);
     assert_eq!(commit.time, "2024-01-01 10:00");
 }
 
@@ -231,8 +234,8 @@ fn test_worktree_info_main() {
         has_changes: false,
         last_commit: Some(CommitInfo {
             id: "def456".to_string(),
-            message: "Test commit".to_string(),
-            author: "Test Author".to_string(),
+            message: TEST_COMMIT_MESSAGE.to_string(),
+            author: TEST_AUTHOR_NAME.to_string(),
             time: "2024-01-01 10:00".to_string(),
         }),
         ahead_behind: None,

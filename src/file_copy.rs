@@ -11,8 +11,16 @@ use std::path::{Path, PathBuf};
 
 use crate::config::FilesConfig;
 use crate::constants::{
-    BYTES_PER_MB, COLON_POSITION_WINDOWS, GIT_DIR, ICON_ERROR, ICON_FILE, ICON_INFO, ICON_SUCCESS,
-    ICON_WARNING, MAX_DIRECTORY_DEPTH, MAX_FILE_SIZE_MB, WINDOWS_PATH_MIN_LENGTH, WORKTREES_SUBDIR,
+    BYTES_PER_MB, COLON_POSITION_WINDOWS, ERROR_FAILED_TO_CREATE_DIR,
+    ERROR_FAILED_TO_CREATE_PARENT_DIR, ERROR_GIT_DIR_NO_PARENT, ERROR_NOT_FOUND,
+    ERROR_NO_SUCH_FILE, ERROR_REPO_NO_WORKING_DIR, ERROR_SOURCE_NOT_FILE_OR_DIR,
+    ERROR_SOURCE_PATH_NOT_FOUND, FILE_COPY_COPIED_SUCCESS, FILE_COPY_COPYING_FILES,
+    FILE_COPY_FAILED, FILE_COPY_NOT_FOUND, FILE_COPY_NO_FILES, FILE_COPY_SAME_DIRECTORY,
+    FILE_COPY_SKIPPING_LARGE, FILE_COPY_SKIPPING_UNSAFE, GIT_DIR, ICON_ERROR, ICON_FILE, ICON_INFO,
+    ICON_SUCCESS, ICON_SYMLINK_WARNING, ICON_WARNING, INFO_FAILED_TO_COPY,
+    INFO_SKIPPING_CIRCULAR_REF, INFO_SKIPPING_SYMLINK, MAIN_WORKTREE_NAMES, MAX_DIRECTORY_DEPTH,
+    MAX_FILE_SIZE_MB, PLURAL_EMPTY, PLURAL_S, SIZE_UNIT_MB, WINDOWS_PATH_MIN_LENGTH,
+    WORKTREES_SUBDIR,
 };
 use crate::filesystem::FileSystem;
 use crate::git::{GitWorktreeManager, WorktreeInfo};
@@ -82,19 +90,19 @@ pub fn copy_configured_files_with_fs(
         .unwrap_or_else(|_| destination_path.to_path_buf());
 
     if source_canonical == dest_canonical {
-        return Err(anyhow!("Source and destination are the same directory"));
+        return Err(anyhow!(FILE_COPY_SAME_DIRECTORY));
     }
 
     let mut copied_files = Vec::new();
 
-    let msg = format!("{ICON_FILE} Copying configured files...").bright_cyan();
+    let msg = format!("{ICON_FILE} {FILE_COPY_COPYING_FILES}").bright_cyan();
     println!("\n{msg}");
 
     for file_pattern in &config.copy {
         if !is_safe_path(file_pattern) {
             let warning = ICON_WARNING.yellow();
             let pattern = file_pattern.yellow();
-            println!("  {warning} Skipping unsafe path: {pattern}");
+            println!("  {warning} {FILE_COPY_SKIPPING_UNSAFE}: {pattern}");
             continue;
         }
 
@@ -107,7 +115,7 @@ pub fn copy_configured_files_with_fs(
                     let warning = ICON_WARNING.yellow();
                     let pattern = file_pattern.yellow();
                     let size_mb = size as f64 / BYTES_PER_MB as f64;
-                    println!("  {warning} Skipping large file: {pattern} ({size_mb:.1} MB)");
+                    println!("  {warning} {FILE_COPY_SKIPPING_LARGE}: {pattern} ({size_mb:.1} {SIZE_UNIT_MB})");
                     continue;
                 }
             }
@@ -119,23 +127,23 @@ pub fn copy_configured_files_with_fs(
                 if count > 0 {
                     let checkmark = ICON_SUCCESS.green();
                     let pattern = file_pattern.green();
-                    let plural = if count == 1 { "" } else { "s" };
-                    println!("  {checkmark} Copied: {pattern} ({count} file{plural})");
+                    let plural = if count == 1 { PLURAL_EMPTY } else { PLURAL_S };
+                    println!("  {checkmark} {FILE_COPY_COPIED_SUCCESS}: {pattern} ({count} file{plural})");
                     copied_files.push(file_pattern.clone());
                 }
             }
             Err(e) => {
                 // Check if it's a "not found" error
-                if e.to_string().contains("No such file or directory")
-                    || e.to_string().contains("not found")
+                if e.to_string().contains(ERROR_NO_SUCH_FILE)
+                    || e.to_string().contains(ERROR_NOT_FOUND)
                 {
                     let warning = ICON_WARNING.yellow();
                     let pattern = file_pattern.yellow();
-                    println!("  {warning} Not found: {pattern} (skipping)");
+                    println!("  {warning} {FILE_COPY_NOT_FOUND}: {pattern} (skipping)");
                 } else {
                     let cross = ICON_ERROR.red();
                     let pattern = file_pattern.red();
-                    println!("  {cross} Failed to copy {pattern}: {e}");
+                    println!("  {cross} {FILE_COPY_FAILED} {pattern}: {e}");
                 }
             }
         }
@@ -143,7 +151,7 @@ pub fn copy_configured_files_with_fs(
 
     if copied_files.is_empty() {
         let info = ICON_INFO.blue();
-        println!("  {info} No files were copied");
+        println!("  {info} {FILE_COPY_NO_FILES}");
     }
 
     Ok(copied_files)
@@ -182,7 +190,7 @@ fn find_main_worktree(worktrees: &[WorktreeInfo]) -> Option<&WorktreeInfo> {
     // First try to find explicitly named main/master worktrees
     worktrees
         .iter()
-        .find(|w| w.name == "main" || w.name == "master")
+        .find(|w| MAIN_WORKTREE_NAMES.contains(&w.name.as_str()))
         .or_else(|| {
             // Otherwise, find the worktree that's a sibling of the git directory
             worktrees.iter().find(|w| {
@@ -212,10 +220,10 @@ fn find_source_in_bare_repo(manager: &GitWorktreeManager) -> Result<PathBuf> {
     let git_dir = manager.repo().path();
     let parent = git_dir
         .parent()
-        .ok_or_else(|| anyhow!("Git directory has no parent"))?;
+        .ok_or_else(|| anyhow!(ERROR_GIT_DIR_NO_PARENT))?;
 
     // Check common worktree locations
-    for name in &["main", "master"] {
+    for name in MAIN_WORKTREE_NAMES {
         let worktree_path = parent.join(name);
         if worktree_path.exists()
             && worktree_path
@@ -246,7 +254,7 @@ fn find_source_in_regular_repo(manager: &GitWorktreeManager) -> Result<PathBuf> 
     let repo_workdir = manager
         .repo()
         .workdir()
-        .ok_or_else(|| anyhow!("Repository has no working directory"))?;
+        .ok_or_else(|| anyhow!(ERROR_REPO_NO_WORKING_DIR))?;
 
     Ok(repo_workdir.to_path_buf())
 }
@@ -419,14 +427,14 @@ fn is_safe_path(path: &str) -> bool {
 fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
     if !source.exists() {
         let source_path = source.display();
-        return Err(anyhow!("Source path not found: {source_path}"));
+        return Err(anyhow!("{ERROR_SOURCE_PATH_NOT_FOUND}{source_path}"));
     }
 
     // Symlink detection with warning
     if source.symlink_metadata()?.file_type().is_symlink() {
-        let warning = "⚠️".yellow();
+        let warning = ICON_SYMLINK_WARNING.yellow();
         let source_path = source.display();
-        println!("  {warning} Skipping symlink: {source_path}");
+        println!("  {warning} {INFO_SKIPPING_SYMLINK}{source_path}");
         return Ok(0);
     }
 
@@ -435,7 +443,7 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).with_context(|| {
                 format!(
-                    "Failed to create parent directory: {parent_display}",
+                    "{ERROR_FAILED_TO_CREATE_PARENT_DIR}{parent_display}",
                     parent_display = parent.display()
                 )
             })?;
@@ -454,7 +462,7 @@ fn copy_file_or_directory(source: &Path, dest: &Path) -> Result<usize> {
         copy_directory_recursive(source, dest, 0)
     } else {
         Err(anyhow!(
-            "Source is neither a file nor a directory: {}",
+            "{ERROR_SOURCE_NOT_FILE_OR_DIR}{}",
             source.display()
         ))
     }
@@ -472,14 +480,14 @@ fn copy_file_or_directory_with_fs(
 ) -> Result<usize> {
     if !fs.exists(source) {
         let source_path = source.display();
-        return Err(anyhow!("Source path not found: {source_path}"));
+        return Err(anyhow!("{ERROR_SOURCE_PATH_NOT_FOUND}{source_path}"));
     }
 
     // Symlink detection with warning
     if fs.symlink_metadata(source)?.file_type().is_symlink() {
-        let warning = "⚠️".yellow();
+        let warning = ICON_SYMLINK_WARNING.yellow();
         let source_path = source.display();
-        println!("  {warning} Skipping symlink: {source_path}");
+        println!("  {warning} {INFO_SKIPPING_SYMLINK}{source_path}");
         return Ok(0);
     }
 
@@ -507,7 +515,7 @@ fn copy_file_or_directory_with_fs(
         copy_directory_recursive_with_fs(source, dest, 0, fs)
     } else {
         Err(anyhow!(
-            "Source is neither a file nor a directory: {}",
+            "{ERROR_SOURCE_NOT_FILE_OR_DIR}{}",
             source.display()
         ))
     }
@@ -529,7 +537,7 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
 
     fs::create_dir_all(dest).with_context(|| {
         format!(
-            "Failed to create directory: {dest_display}",
+            "{ERROR_FAILED_TO_CREATE_DIR}{dest_display}",
             dest_display = dest.display()
         )
     })?;
@@ -554,7 +562,7 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
             .unwrap_or(false)
         {
             println!(
-                "  {} Skipping circular reference: {}",
+                "  {} {INFO_SKIPPING_CIRCULAR_REF}{}",
                 ICON_WARNING.yellow(),
                 source_path.display()
             );
@@ -565,7 +573,7 @@ fn copy_directory_recursive(source: &Path, dest: &Path, depth: usize) -> Result<
             Ok(count) => total_files += count,
             Err(e) => {
                 println!(
-                    "  {} Failed to copy {}: {}",
+                    "  {} {INFO_FAILED_TO_COPY} {}: {}",
                     ICON_WARNING.yellow(),
                     source_path.display(),
                     e
@@ -624,7 +632,7 @@ fn copy_directory_recursive_with_fs(
             .unwrap_or(false)
         {
             println!(
-                "  {} Skipping circular reference: {}",
+                "  {} {INFO_SKIPPING_CIRCULAR_REF}{}",
                 ICON_WARNING.yellow(),
                 source_path.display()
             );
@@ -635,7 +643,7 @@ fn copy_directory_recursive_with_fs(
             Ok(count) => total_files += count,
             Err(e) => {
                 println!(
-                    "  {} Failed to copy {}: {}",
+                    "  {} {INFO_FAILED_TO_COPY} {}: {}",
                     ICON_WARNING.yellow(),
                     source_path.display(),
                     e

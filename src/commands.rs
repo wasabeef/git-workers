@@ -29,16 +29,23 @@ use crate::config::Config;
 use crate::constants::{
     section_header, ACTION_CHANGE_BRANCH_NAME, ACTION_CREATE_NEW_BRANCH, ACTION_USE_LOCAL_BRANCH,
     ACTION_USE_WORKTREE_NAME, BRANCH_OPTION_SELECT_BRANCH, BRANCH_OPTION_SELECT_TAG, CHAR_DOT,
-    CONFIG_FILE_NAME, DEFAULT_EMPTY_STRING, DEFAULT_REPO_NAME, DEFAULT_WORKTREE_CLEANUP_DAYS,
+    CONFIG_FILE_NAME, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_EDITOR_UNIX,
+    DEFAULT_EDITOR_WINDOWS, DEFAULT_EMPTY_STRING, DEFAULT_MENU_SELECTION, DEFAULT_REPO_NAME,
+    DEFAULT_WORKTREE_CLEANUP_DAYS, EMOJI_DETACHED, EMOJI_FOLDER, EMOJI_HOME, EMOJI_LOCKED,
+    ENV_EDITOR, ENV_VISUAL, ERROR_CUSTOM_PATH_EMPTY, ERROR_WORKTREE_NAME_EMPTY,
     FUZZY_SEARCH_THRESHOLD, GIT_CRITICAL_DIRS, GIT_DIR, GIT_REMOTE_PREFIX, GIT_RESERVED_NAMES,
-    HOOK_POST_CREATE, HOOK_POST_SWITCH, HOOK_PRE_REMOVE, ICON_ARROW, ICON_LIST, ICON_LOCAL_BRANCH,
+    HEADER_CREATE_WORKTREE, HEADER_SEARCH_WORKTREES, HEADER_WORKTREES, HOOK_POST_CREATE,
+    HOOK_POST_SWITCH, HOOK_PRE_REMOVE, ICON_ARROW, ICON_LIST, ICON_LOCAL_BRANCH,
     ICON_REMOTE_BRANCH, ICON_SWITCH, ICON_TAG_INDICATOR, INFO_TIP, INFO_USE_CREATE,
     INVALID_FILESYSTEM_CHARS, LABEL_BRANCH, LABEL_MODIFIED, LABEL_NAME, LABEL_NO, LABEL_PATH,
-    LABEL_YES, MAX_WORKTREE_NAME_LENGTH, MIN_PATH_COMPONENTS_FOR_SUBDIR,
-    PATH_COMPONENT_SECOND_INDEX, PROGRESS_BAR_TICK_MILLIS, TAG_MESSAGE_TRUNCATE_LENGTH,
-    UI_BRANCH_COL_EXTRA_WIDTH, UI_FOOTER_LINES, UI_HEADER_LINES, UI_MIN_ITEMS_PER_PAGE,
-    UI_MODIFIED_COL_WIDTH, UI_NAME_COL_MIN_WIDTH, UI_PATH_COL_WIDTH, WARNING_NO_WORKTREES,
-    WINDOWS_RESERVED_CHARS, WORKTREES_SUBDIR, WORKTREE_LOCATION_CUSTOM_PATH,
+    LABEL_YES, MAX_WORKTREE_NAME_LENGTH, MIN_PATH_COMPONENTS_FOR_SUBDIR, MSG_ALREADY_IN_WORKTREE,
+    MSG_NO_WORKTREES_TO_SEARCH, MSG_SEARCH_FUZZY_ENABLED, PATH_COMPONENT_SECOND_INDEX,
+    PROGRESS_BAR_TICK_MILLIS, PROMPT_CONFLICT_ACTION, PROMPT_CUSTOM_PATH, PROMPT_SELECT_BRANCH,
+    PROMPT_SELECT_BRANCH_OPTION, PROMPT_SELECT_TAG, PROMPT_SELECT_WORKTREE_LOCATION,
+    PROMPT_SELECT_WORKTREE_SWITCH, PROMPT_WORKTREE_NAME, SEARCH_CURRENT_INDICATOR,
+    TAG_MESSAGE_TRUNCATE_LENGTH, UI_BRANCH_COL_EXTRA_WIDTH, UI_FOOTER_LINES, UI_HEADER_LINES,
+    UI_MIN_ITEMS_PER_PAGE, UI_MODIFIED_COL_WIDTH, UI_NAME_COL_MIN_WIDTH, UI_PATH_COL_WIDTH,
+    WARNING_NO_WORKTREES, WINDOWS_RESERVED_CHARS, WORKTREES_SUBDIR, WORKTREE_LOCATION_CUSTOM_PATH,
     WORKTREE_LOCATION_SAME_LEVEL, WORKTREE_LOCATION_SUBDIRECTORY,
 };
 use crate::file_copy;
@@ -84,13 +91,13 @@ fn get_worktree_icon_internal(is_current: bool) -> colored::ColoredString {
 #[allow(dead_code)]
 pub fn get_worktree_icon(worktree: &WorktreeInfo) -> &'static str {
     if worktree.is_current {
-        "🏠"
+        EMOJI_HOME
     } else if worktree.is_locked {
-        "🔒"
-    } else if worktree.branch == "detached" {
-        "🔗"
+        EMOJI_LOCKED
+    } else if worktree.branch == DEFAULT_BRANCH_DETACHED {
+        EMOJI_DETACHED
     } else {
-        "📁"
+        EMOJI_FOLDER
     }
 }
 
@@ -202,7 +209,7 @@ pub fn list_worktrees_with_git(git_ops: &dyn GitReadOperations) -> Result<()> {
 
         // Print header
         println!();
-        let header = section_header("Worktrees");
+        let header = section_header(HEADER_WORKTREES);
         println!("{header}");
 
         let start_idx = current_page * items_per_page;
@@ -354,7 +361,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if worktrees.is_empty() {
         println!();
-        let msg = "• No worktrees to search.".yellow();
+        let msg = MSG_NO_WORKTREES_TO_SEARCH.yellow();
         println!("{msg}");
         println!();
         press_any_key_to_continue()?;
@@ -362,7 +369,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
     }
 
     println!();
-    let header = section_header("Search Worktrees");
+    let header = section_header(HEADER_SEARCH_WORKTREES);
     println!("{header}");
     println!();
 
@@ -372,16 +379,16 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
         .map(|wt| {
             let mut item = format!("{} ({})", wt.name, wt.branch);
             if wt.is_current {
-                item.push_str(" (current)");
+                item.push_str(SEARCH_CURRENT_INDICATOR);
             }
             item
         })
         .collect();
 
     // Use FuzzySelect for interactive search
-    println!("Type to search worktrees (fuzzy search enabled):");
+    println!("{MSG_SEARCH_FUZZY_ENABLED}");
     let selection = match FuzzySelect::with_theme(&get_theme())
-        .with_prompt("Select a worktree to switch to")
+        .with_prompt(PROMPT_SELECT_WORKTREE_SWITCH)
         .items(&items)
         .interact_opt()?
     {
@@ -393,7 +400,7 @@ fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
 
     if selected_worktree.is_current {
         println!();
-        let msg = "• Already in this worktree.".yellow();
+        let msg = MSG_ALREADY_IN_WORKTREE.yellow();
         println!("{msg}");
         println!();
         press_any_key_to_continue()?;
@@ -529,7 +536,7 @@ pub fn create_worktree_with_ui(
     ui: &dyn UserInterface,
 ) -> Result<bool> {
     println!();
-    let header = section_header("Create New Worktree");
+    let header = section_header(HEADER_CREATE_WORKTREE);
     println!("{header}");
     println!();
 
@@ -538,13 +545,13 @@ pub fn create_worktree_with_ui(
     let has_worktrees = !existing_worktrees.is_empty();
 
     // Get worktree name
-    let name = match ui.input("Enter worktree name") {
+    let name = match ui.input(PROMPT_WORKTREE_NAME) {
         Ok(name) => name.trim().to_string(),
         Err(_) => return Ok(false),
     };
 
     if name.is_empty() {
-        utils::print_error("Worktree name cannot be empty");
+        utils::print_error(ERROR_WORKTREE_NAME_EMPTY);
         return Ok(false);
     }
 
@@ -577,7 +584,11 @@ pub fn create_worktree_with_ui(
             "Custom path (specify relative to project root)".to_string(),
         ];
 
-        let selection = match ui.select("Select worktree location pattern", &options) {
+        let selection = match ui.select_with_default(
+            PROMPT_SELECT_WORKTREE_LOCATION,
+            &options,
+            DEFAULT_MENU_SELECTION,
+        ) {
             Ok(selection) => selection,
             Err(_) => return Ok(false),
         };
@@ -594,13 +605,13 @@ pub fn create_worktree_with_ui(
                     "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed();
                 println!("{examples}");
 
-                let custom_path = match ui.input("Custom path") {
+                let custom_path = match ui.input(PROMPT_CUSTOM_PATH) {
                     Ok(path) => path.trim().to_string(),
                     Err(_) => return Ok(false),
                 };
 
                 if custom_path.is_empty() {
-                    utils::print_error("Custom path cannot be empty");
+                    utils::print_error(ERROR_CUSTOM_PATH_EMPTY);
                     return Ok(false);
                 }
 
@@ -626,7 +637,11 @@ pub fn create_worktree_with_ui(
         "Select tag".to_string(),
     ];
 
-    let branch_choice = match ui.select("Select branch option", &branch_options) {
+    let branch_choice = match ui.select_with_default(
+        PROMPT_SELECT_BRANCH_OPTION,
+        &branch_options,
+        DEFAULT_MENU_SELECTION,
+    ) {
         Ok(choice) => choice,
         Err(_) => return Ok(false),
     };
@@ -677,9 +692,13 @@ pub fn create_worktree_with_ui(
                 // Use FuzzySelect for better search experience when there are many branches
                 let selection_result = if branch_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search branches (fuzzy search enabled):");
-                    ui.fuzzy_select("Select a branch", &branch_items)
+                    ui.fuzzy_select(PROMPT_SELECT_BRANCH, &branch_items)
                 } else {
-                    ui.select("Select a branch", &branch_items)
+                    ui.select_with_default(
+                        PROMPT_SELECT_BRANCH,
+                        &branch_items,
+                        DEFAULT_MENU_SELECTION,
+                    )
                 };
                 let selection_result = selection_result.ok();
 
@@ -709,7 +728,11 @@ pub fn create_worktree_with_ui(
                                     "Cancel".to_string(),
                                 ];
 
-                                match ui.select("What would you like to do?", &action_options) {
+                                match ui.select_with_default(
+                                    PROMPT_CONFLICT_ACTION,
+                                    &action_options,
+                                    DEFAULT_MENU_SELECTION,
+                                ) {
                                     Ok(ACTION_USE_WORKTREE_NAME) => {
                                         // Use worktree name as new branch name
                                         (Some(selected_branch.clone()), Some(name.clone()))
@@ -779,7 +802,11 @@ pub fn create_worktree_with_ui(
                                     "Cancel".to_string(),
                                 ];
 
-                                match ui.select("What would you like to do?", &action_options) {
+                                match ui.select_with_default(
+                                    PROMPT_CONFLICT_ACTION,
+                                    &action_options,
+                                    DEFAULT_MENU_SELECTION,
+                                ) {
                                     Ok(ACTION_CREATE_NEW_BRANCH) => {
                                         // Create new branch with worktree name
                                         (
@@ -846,9 +873,9 @@ pub fn create_worktree_with_ui(
                 // Use FuzzySelect for better search experience when there are many tags
                 let selection_result = if tag_items.len() > FUZZY_SEARCH_THRESHOLD {
                     println!("Type to search tags (fuzzy search enabled):");
-                    ui.fuzzy_select("Select a tag", &tag_items)
+                    ui.fuzzy_select(PROMPT_SELECT_TAG, &tag_items)
                 } else {
-                    ui.select("Select a tag", &tag_items)
+                    ui.select_with_default(PROMPT_SELECT_TAG, &tag_items, DEFAULT_MENU_SELECTION)
                 };
                 let selection_result = selection_result.ok();
 
@@ -1091,7 +1118,11 @@ pub fn delete_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
 
-    let selection = match ui.select("Select a worktree to delete (ESC to cancel)", &items) {
+    let selection = match ui.select_with_default(
+        "Select a worktree to delete (ESC to cancel)",
+        &items,
+        DEFAULT_MENU_SELECTION,
+    ) {
         Ok(selection) => selection,
         Err(_) => return Ok(()),
     };
@@ -1261,13 +1292,20 @@ pub fn switch_worktree_with_ui(
         })
         .collect();
 
-    let selection = ui.select("Select a worktree to switch to (ESC to cancel)", &items)?;
+    let selection = match ui.select_with_default(
+        "Select a worktree to switch to (ESC to cancel)",
+        &items,
+        DEFAULT_MENU_SELECTION,
+    ) {
+        Ok(selection) => selection,
+        Err(_) => return Ok(false),
+    };
 
     let selected_worktree = &sorted_worktrees[selection];
 
     if selected_worktree.is_current {
         println!();
-        let msg = "• Already in this worktree.".yellow();
+        let msg = MSG_ALREADY_IN_WORKTREE.yellow();
         println!("{msg}");
         println!();
         press_any_key_to_continue()?;
@@ -1741,16 +1779,23 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect();
 
-    let selection = ui.select("Select a worktree to rename (ESC to cancel)", &items)?;
+    let selection = match ui.select_with_default(
+        "Select a worktree to rename (ESC to cancel)",
+        &items,
+        DEFAULT_MENU_SELECTION,
+    ) {
+        Ok(selection) => selection,
+        Err(_) => return Ok(()),
+    };
 
     let worktree = renameable_worktrees[selection];
 
     // Get new name
     println!();
-    let new_name = ui
-        .input(&format!("New name for '{}' (ESC to cancel)", worktree.name))?
-        .trim()
-        .to_string();
+    let new_name = match ui.input(&format!("New name for '{}' (ESC to cancel)", worktree.name)) {
+        Ok(name) => name.trim().to_string(),
+        Err(_) => return Ok(()),
+    };
 
     if new_name.is_empty() {
         utils::print_error("Name cannot be empty");
@@ -1774,13 +1819,16 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
     }
 
     // Check if the worktree has a branch that could be renamed
-    let rename_branch = if worktree.branch != "detached"
-        && worktree.branch != "unknown"
+    let rename_branch = if worktree.branch != DEFAULT_BRANCH_DETACHED
+        && worktree.branch != DEFAULT_BRANCH_UNKNOWN
         && (worktree.branch == worktree.name
             || worktree.branch == format!("feature/{}", worktree.name))
     {
         println!();
-        ui.confirm_with_default("Also rename the associated branch?", true)?
+        match ui.confirm_with_default("Also rename the associated branch?", true) {
+            Ok(confirm) => confirm,
+            Err(_) => return Ok(()),
+        }
     } else {
         false
     };
@@ -1813,7 +1861,10 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
     }
 
     println!();
-    let confirm = ui.confirm_with_default("Proceed with rename?", false)?;
+    let confirm = match ui.confirm_with_default("Proceed with rename?", false) {
+        Ok(confirm) => confirm,
+        Err(_) => return Ok(()),
+    };
 
     if !confirm {
         return Ok(());
@@ -2505,13 +2556,13 @@ copy = [
     }
 
     // Get the user's preferred editor
-    let editor = std::env::var("EDITOR")
-        .or_else(|_| std::env::var("VISUAL"))
+    let editor = std::env::var(ENV_EDITOR)
+        .or_else(|_| std::env::var(ENV_VISUAL))
         .unwrap_or_else(|_| {
             if cfg!(target_os = "windows") {
-                "notepad".to_string()
+                DEFAULT_EDITOR_WINDOWS.to_string()
             } else {
-                "vi".to_string()
+                DEFAULT_EDITOR_UNIX.to_string()
             }
         });
 

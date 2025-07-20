@@ -163,7 +163,11 @@ fn main() -> Result<()> {
 
         // Show menu with List worktrees as default selection
         let ui = DialoguerUI;
-        let selection = match ui.select(constants::PROMPT_ACTION, &display_items) {
+        let selection = match ui.select_with_default(
+            constants::PROMPT_ACTION,
+            &display_items,
+            constants::DEFAULT_MENU_SELECTION,
+        ) {
             Ok(selection) => selection,
             Err(_) => {
                 // User pressed ESC - exit cleanly

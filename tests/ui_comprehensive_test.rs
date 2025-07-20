@@ -267,6 +267,78 @@ fn test_complex_ui_interaction_sequence() -> Result<()> {
     Ok(())
 }
 
+/// Test select_with_default functionality
+#[test]
+fn test_mock_ui_select_with_default() -> Result<()> {
+    // Test with configured selection
+    let mock_ui = MockUI::new().with_selection(2);
+
+    let result = mock_ui.select_with_default(
+        "test",
+        &[
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string(),
+        ],
+        0, // Default is 0, but MockUI should return configured value
+    )?;
+
+    assert_eq!(result, 2);
+    assert!(mock_ui.is_exhausted());
+
+    // Test with no configured selection - should use default
+    let mock_ui_empty = MockUI::new();
+
+    // Note: MockUI's select_with_default currently just calls select,
+    // so it will still error if no selection is configured
+    let result =
+        mock_ui_empty.select_with_default("test", &["first".to_string(), "second".to_string()], 1);
+
+    assert!(result.is_err());
+
+    Ok(())
+}
+
+/// Test select_with_default with various defaults
+#[test]
+fn test_mock_ui_select_with_default_edge_cases() -> Result<()> {
+    // Test with different configured selections overriding defaults
+    let mock_ui = MockUI::new()
+        .with_selection(0)
+        .with_selection(2)
+        .with_selection(1);
+
+    // First call - should return 0 regardless of default
+    assert_eq!(
+        mock_ui.select_with_default("test1", &["a".to_string(), "b".to_string()], 1)?,
+        0
+    );
+
+    // Second call - should return 2 regardless of default
+    assert_eq!(
+        mock_ui.select_with_default(
+            "test2",
+            &["x".to_string(), "y".to_string(), "z".to_string()],
+            0
+        )?,
+        2
+    );
+
+    // Third call - should return 1 regardless of default
+    assert_eq!(
+        mock_ui.select_with_default(
+            "test3",
+            &["p".to_string(), "q".to_string(), "r".to_string()],
+            2
+        )?,
+        1
+    );
+
+    assert!(mock_ui.is_exhausted());
+
+    Ok(())
+}
+
 /// Test error propagation through UI abstraction
 #[test]
 fn test_ui_error_propagation() {
