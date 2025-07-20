@@ -245,9 +245,13 @@ fn test_get_repository_info_bare_vs_normal() -> Result<()> {
     let bare_repo_path = temp_dir.path().join("bare-repo.git");
     Repository::init_bare(&bare_repo_path)?;
 
+    // Save current directory - might fail in some test environments
+    let original_dir = std::env::current_dir().ok();
+
     // Test normal repository
     std::env::set_current_dir(&normal_repo_path)?;
     let normal_info = get_repository_info();
+
     assert!(
         normal_info.contains("normal-repo"),
         "Expected normal repo info to contain 'normal-repo', got: {normal_info}"
@@ -260,7 +264,13 @@ fn test_get_repository_info_bare_vs_normal() -> Result<()> {
     // Test bare repository
     std::env::set_current_dir(&bare_repo_path)?;
     let bare_info = get_repository_info();
+
     assert_eq!(bare_info, "bare-repo.git"); // Bare repos show full directory name
+
+    // Restore original directory if we had one
+    if let Some(dir) = original_dir {
+        let _ = std::env::set_current_dir(dir);
+    }
 
     Ok(())
 }

@@ -64,3 +64,5 @@ IMPLEMENTATION_COMPLETE.md
 analysis_results/
 backup_phase*/
 scripts/
+
+worktrees/

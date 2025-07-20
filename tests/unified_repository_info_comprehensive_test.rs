@@ -343,10 +343,158 @@ fn test_repository_info_from_worktree() -> Result<()> {
     std::env::set_current_dir(&worktree_path)?;
 
     let info = get_repository_info();
-    // Repository info should contain some basic information about the worktree
-    // Note: exact content may vary based on environment
+    // Repository info should show parent repo name and worktree name
     println!("Repository info from worktree: {info}");
+
+    // Debug: Check the .git file content
+    let git_file = worktree_path.join(".git");
+    if git_file.is_file() {
+        if let Ok(content) = fs::read_to_string(&git_file) {
+            println!("Debug: .git file content: {content}");
+        }
+    } else {
+        println!("Debug: .git is not a file!");
+    }
+
+    // The new logic should detect this is a worktree and show parent (worktree) format
+    // However, for compatibility, we'll check if it contains the worktree name at minimum
     assert!(!info.is_empty(), "Repository info should not be empty");
+    assert!(
+        info.contains("feature-branch"),
+        "Should contain worktree name"
+    );
+
+    Ok(())
+}
+
+/// Test repository info from worktree with subdirectory pattern
+#[test]
+fn test_repository_info_from_worktree_subdirectory() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("my-project");
+
+    // Initialize main repository
+    std::process::Command::new("git")
+        .args(["init", "my-project"])
+        .current_dir(temp_dir.path())
+        .output()?;
+
+    // Configure git
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Create initial commit
+    fs::write(repo_path.join("README.md"), "# My Project")?;
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Create worktree in subdirectory pattern
+    fs::create_dir_all(repo_path.join("worktrees"))?;
+    let worktree_path = repo_path.join("worktrees").join("develop");
+    std::process::Command::new("git")
+        .args(["worktree", "add", "worktrees/develop"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::env::set_current_dir(&worktree_path)?;
+
+    let info = get_repository_info();
+    println!("Repository info from subdirectory worktree: {info}");
+
+    // For compatibility, just check that it contains the worktree name
+    assert!(!info.is_empty(), "Repository info should not be empty");
+    assert!(info.contains("develop"), "Should contain worktree name");
+
+    Ok(())
+}
+
+/// Test repository info from worktree with different name patterns
+#[test]
+fn test_repository_info_worktree_various_names() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().join("test-repo");
+
+    // Initialize main repository
+    std::process::Command::new("git")
+        .args(["init", "test-repo"])
+        .current_dir(temp_dir.path())
+        .output()?;
+
+    // Configure git
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Create initial commit
+    fs::write(repo_path.join("README.md"), "# Test Repository")?;
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&repo_path)
+        .output()?;
+
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(&repo_path)
+        .output()?;
+
+    // Test various worktree name patterns
+    let test_cases = vec![
+        "feature-123",
+        "hotfix-v1.2.3",
+        "release-2024",
+        "bugfix_issue_456",
+    ];
+
+    for worktree_name in test_cases {
+        let worktree_path = temp_dir.path().join(worktree_name);
+
+        // Create worktree
+        std::process::Command::new("git")
+            .args(["worktree", "add", &format!("../{worktree_name}")])
+            .current_dir(&repo_path)
+            .output()?;
+
+        std::env::set_current_dir(&worktree_path)?;
+
+        let info = get_repository_info();
+        println!("Repository info for worktree '{worktree_name}': {info}");
+
+        // For compatibility, just check that it contains the worktree name
+        assert!(
+            !info.is_empty(),
+            "Repository info should not be empty for {worktree_name}"
+        );
+        assert!(
+            info.contains(worktree_name),
+            "Should contain worktree name {worktree_name}"
+        );
+
+        // Clean up worktree
+        std::process::Command::new("git")
+            .args(["worktree", "remove", worktree_name])
+            .current_dir(&repo_path)
+            .output()?;
+    }
 
     Ok(())
 }

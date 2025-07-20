@@ -60,20 +60,35 @@ pub fn get_repository_info() -> String {
                 .and_then(|name| name.to_str())
                 .unwrap_or(UNKNOWN_VALUE);
 
-            // Try to get the common directory (parent repository)
-            // The commondir file exists in worktrees and points to the main .git directory
-            let commondir_path = repo.path().join(GIT_COMMONDIR_FILE);
-            if commondir_path.exists() {
-                // This is a worktree, read the commondir file
-                if let Ok(content) = std::fs::read_to_string(&commondir_path) {
-                    let common_dir = std::path::PathBuf::from(content.trim());
-                    // Extract the parent repository name from the common directory path
-                    if let Some(parent_name) = common_dir
-                        .parent()
-                        .and_then(|p| p.file_name())
-                        .and_then(|name| name.to_str())
-                    {
-                        return format!("{parent_name} ({worktree_name})");
+            // Check if we're in a worktree by looking for .git file (not directory)
+            let dot_git_path = current_dir.join(".git");
+            if dot_git_path.is_file() {
+                // This is a worktree - read the .git file to get the actual git directory
+                if let Ok(content) = std::fs::read_to_string(&dot_git_path) {
+                    // The .git file contains "gitdir: /path/to/main/.git/worktrees/name"
+                    if let Some(gitdir_path) = content.strip_prefix("gitdir: ") {
+                        let gitdir = std::path::PathBuf::from(gitdir_path.trim());
+                        // Check for commondir in the actual git directory
+                        let commondir_path = gitdir.join(GIT_COMMONDIR_FILE);
+                        if commondir_path.exists() {
+                            if let Ok(commondir_content) = std::fs::read_to_string(&commondir_path)
+                            {
+                                // commondir contains a relative path like "../.."
+                                let common_dir = gitdir.join(commondir_content.trim());
+
+                                // Normalize the path to resolve .. components
+                                if let Ok(normalized_common_dir) = common_dir.canonicalize() {
+                                    // Extract the parent repository name
+                                    if let Some(parent_name) = normalized_common_dir
+                                        .parent()
+                                        .and_then(|p| p.file_name())
+                                        .and_then(|name| name.to_str())
+                                    {
+                                        return format!("{parent_name} ({worktree_name})");
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             } else if repo
