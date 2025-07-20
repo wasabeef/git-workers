@@ -7,13 +7,19 @@ use anyhow::Result;
 use dialoguer::{Confirm, FuzzySelect, Input, MultiSelect, Select};
 use std::collections::VecDeque;
 
+use crate::utils::get_theme;
+
 /// Trait for user interface interactions
 ///
 /// This trait abstracts all user input operations, making the code testable
 /// by allowing mock implementations for testing and real implementations for production.
 pub trait UserInterface {
     /// Display a selection menu and return the selected index
+    #[allow(dead_code)]
     fn select(&self, prompt: &str, items: &[String]) -> Result<usize>;
+
+    /// Display a selection menu with a default selection and return the selected index
+    fn select_with_default(&self, prompt: &str, items: &[String], default: usize) -> Result<usize>;
 
     /// Display a fuzzy-searchable selection menu and return the selected index
     fn fuzzy_select(&self, prompt: &str, items: &[String]) -> Result<usize>;
@@ -41,15 +47,24 @@ pub struct DialoguerUI;
 
 impl UserInterface for DialoguerUI {
     fn select(&self, prompt: &str, items: &[String]) -> Result<usize> {
-        let selection = Select::new()
+        let selection = Select::with_theme(&get_theme())
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
         selection.ok_or_else(|| anyhow::anyhow!("User cancelled selection"))
     }
 
+    fn select_with_default(&self, prompt: &str, items: &[String], default: usize) -> Result<usize> {
+        let selection = Select::with_theme(&get_theme())
+            .with_prompt(prompt)
+            .items(items)
+            .default(default)
+            .interact_opt()?;
+        selection.ok_or_else(|| anyhow::anyhow!("User cancelled selection"))
+    }
+
     fn fuzzy_select(&self, prompt: &str, items: &[String]) -> Result<usize> {
-        let selection = FuzzySelect::new()
+        let selection = FuzzySelect::with_theme(&get_theme())
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
@@ -57,12 +72,14 @@ impl UserInterface for DialoguerUI {
     }
 
     fn input(&self, prompt: &str) -> Result<String> {
-        let input = Input::<String>::new().with_prompt(prompt).interact_text()?;
+        let input = Input::<String>::with_theme(&get_theme())
+            .with_prompt(prompt)
+            .interact_text()?;
         Ok(input)
     }
 
     fn input_with_default(&self, prompt: &str, default: &str) -> Result<String> {
-        let input = Input::<String>::new()
+        let input = Input::<String>::with_theme(&get_theme())
             .with_prompt(prompt)
             .default(default.to_string())
             .interact_text()?;
@@ -70,12 +87,14 @@ impl UserInterface for DialoguerUI {
     }
 
     fn confirm(&self, prompt: &str) -> Result<bool> {
-        let confirmed = Confirm::new().with_prompt(prompt).interact_opt()?;
+        let confirmed = Confirm::with_theme(&get_theme())
+            .with_prompt(prompt)
+            .interact_opt()?;
         confirmed.ok_or_else(|| anyhow::anyhow!("User cancelled confirmation"))
     }
 
     fn confirm_with_default(&self, prompt: &str, default: bool) -> Result<bool> {
-        let confirmed = Confirm::new()
+        let confirmed = Confirm::with_theme(&get_theme())
             .with_prompt(prompt)
             .default(default)
             .interact_opt()?;
@@ -83,7 +102,7 @@ impl UserInterface for DialoguerUI {
     }
 
     fn multiselect(&self, prompt: &str, items: &[String]) -> Result<Vec<usize>> {
-        let selections = MultiSelect::new()
+        let selections = MultiSelect::with_theme(&get_theme())
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
@@ -159,6 +178,19 @@ impl MockUI {
 
 impl UserInterface for MockUI {
     fn select(&self, _prompt: &str, _items: &[String]) -> Result<usize> {
+        self.selections
+            .borrow_mut()
+            .pop_front()
+            .ok_or_else(|| anyhow::anyhow!("No more selections configured for MockUI"))
+    }
+
+    fn select_with_default(
+        &self,
+        _prompt: &str,
+        _items: &[String],
+        _default: usize,
+    ) -> Result<usize> {
+        // For testing, select_with_default behaves the same as regular select
         self.selections
             .borrow_mut()
             .pop_front()
