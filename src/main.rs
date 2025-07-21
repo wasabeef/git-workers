@@ -3,6 +3,7 @@
 //! This is the main entry point for the Git Workers CLI application.
 //! It provides an interactive menu-driven interface for managing Git worktrees.
 //!
+#![allow(dead_code)]
 //! # Overview
 //!
 //! Git Workers simplifies the management of Git worktrees by providing an intuitive
@@ -43,24 +44,12 @@ use console::Term;
 use std::env;
 use std::io::{self, Write};
 
-mod commands;
-mod config;
-mod constants;
-mod file_copy;
-mod filesystem;
-mod git;
-mod git_interface;
-mod hooks;
-mod input_esc_raw;
-mod menu;
-mod repository_info;
-mod ui;
-mod utils;
+use git_workers::{commands, constants, menu, repository_info};
 
 use constants::header_separator;
+use git_workers::ui::{DialoguerUI, UserInterface};
 use menu::MenuItem;
 use repository_info::get_repository_info;
-use ui::{DialoguerUI, UserInterface};
 
 /// Command-line arguments for Git Workers
 ///
@@ -317,5 +306,98 @@ fn setup_terminal_config() {
             == constants::ENV_CLICOLOR_FORCE_VALUE
     {
         colored::control::set_override(true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::Term;
+
+    #[test]
+    fn test_menu_action_enum_creation() {
+        // Test that MenuAction variants can be created
+        let continue_action = MenuAction::Continue;
+        let exit_action = MenuAction::Exit;
+        let exit_after_switch = MenuAction::ExitAfterSwitch;
+
+        // These should compile and not panic
+        match continue_action {
+            MenuAction::Continue => { /* expected */ }
+            _ => unreachable!("Expected MenuAction::Continue"),
+        }
+
+        match exit_action {
+            MenuAction::Exit => { /* expected */ }
+            _ => unreachable!("Expected MenuAction::Exit"),
+        }
+
+        match exit_after_switch {
+            MenuAction::ExitAfterSwitch => { /* expected */ }
+            _ => unreachable!("Expected MenuAction::ExitAfterSwitch"),
+        }
+    }
+
+    #[test]
+    fn test_clear_screen_basic() {
+        // Test that clear_screen doesn't panic
+        // We can't easily test the actual clearing without mocking terminal
+        let term = Term::stdout();
+        clear_screen(&term);
+        // If we get here without panic, the function works
+    }
+
+    #[test]
+    fn test_setup_terminal_config_basic() {
+        // Test that setup_terminal_config doesn't panic
+        setup_terminal_config();
+        // If we get here without panic, the function works
+    }
+
+    #[test]
+    fn test_setup_terminal_config_with_no_color() {
+        // Test NO_COLOR environment variable handling
+        std::env::set_var(constants::ENV_NO_COLOR, "1");
+        setup_terminal_config();
+        std::env::remove_var(constants::ENV_NO_COLOR);
+
+        // Function executed without panic
+    }
+
+    #[test]
+    fn test_setup_terminal_config_with_force_color() {
+        // Test FORCE_COLOR environment variable handling
+        std::env::set_var(constants::ENV_FORCE_COLOR, "1");
+        setup_terminal_config();
+        std::env::remove_var(constants::ENV_FORCE_COLOR);
+
+        // Function executed without panic
+    }
+
+    #[test]
+    fn test_setup_terminal_config_with_clicolor_force() {
+        // Test CLICOLOR_FORCE environment variable handling
+        std::env::set_var(
+            constants::ENV_CLICOLOR_FORCE,
+            constants::ENV_CLICOLOR_FORCE_VALUE,
+        );
+        setup_terminal_config();
+        std::env::remove_var(constants::ENV_CLICOLOR_FORCE);
+
+        // Function executed without panic
+    }
+
+    #[test]
+    fn test_handle_menu_item_exit() -> Result<()> {
+        // Test handling of Exit menu item
+        let term = Term::stdout();
+        let result = handle_menu_item(&MenuItem::Exit, &term)?;
+
+        match result {
+            MenuAction::Exit => { /* expected */ }
+            _ => panic!("Expected MenuAction::Exit"),
+        }
+
+        Ok(())
     }
 }

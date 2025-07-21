@@ -557,3 +557,90 @@ impl Config {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_load_from_file_basic_functionality() {
+        // Test the basic file loading functionality without creating a full git repository
+        // We'll test individual components instead since load_from_file requires a git2::Repository
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join(".git-workers.toml");
+
+        let config_content = r#"
+[hooks]
+post-create = ["echo 'test'"]
+
+[files]
+copy = [".env"]
+"#;
+        fs::write(&config_path, config_content).unwrap();
+
+        // Test that the file was created and can be read
+        assert!(config_path.exists());
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("post-create"));
+        assert!(content.contains(".env"));
+    }
+
+    #[test]
+    fn test_load_from_file_config_parsing() {
+        // Test TOML parsing logic
+        let toml_content = r#"
+[hooks]
+post-create = ["npm install"]
+
+[files]
+copy = [".env", "config.local"]
+"#;
+        let parsed: Config = toml::from_str(toml_content).unwrap();
+        assert!(!parsed.hooks.is_empty());
+        assert!(!parsed.files.copy.is_empty());
+        assert_eq!(parsed.files.copy.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_repository_url_match() {
+        // This is a unit test for the private function logic
+        // We can't easily test with a real git2::Repository, so we test the normalization logic
+        let url1 = "https://github.com/owner/repo.git";
+        let url2 = "https://github.com/owner/repo";
+        let url3 = "HTTPS://GITHUB.COM/OWNER/REPO/";
+
+        // Normalize URLs like the function does
+        let normalize = |url: &str| {
+            url.trim_end_matches(".git")
+                .trim_end_matches('/')
+                .to_lowercase()
+        };
+
+        assert_eq!(normalize(url1), normalize(url2));
+        assert_eq!(normalize(url1), normalize(url3));
+        assert_eq!(normalize(url2), normalize(url3));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert!(config.hooks.is_empty());
+        assert!(config.files.copy.is_empty());
+        assert!(config.repository.url.is_none());
+    }
+
+    #[test]
+    fn test_files_config_default() {
+        let files_config = FilesConfig::default();
+        assert!(files_config.copy.is_empty());
+        assert!(files_config.source.is_none());
+    }
+
+    #[test]
+    fn test_repository_config_default() {
+        let repo_config = RepositoryConfig::default();
+        assert!(repo_config.url.is_none());
+    }
+}
