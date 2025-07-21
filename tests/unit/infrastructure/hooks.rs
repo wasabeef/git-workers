@@ -93,10 +93,10 @@ fn test_execute_hooks_with_config() -> Result<()> {
 
     let temp_dir = TempDir::new()?;
 
-    // Create a simple config file with echo command only (cross-platform)
+    // Create a simple config file with a command that should exist everywhere
     let config_content = r#"
 [hooks]
-post-create = ["echo 'Created {{worktree_name}}'"]
+post-create = ["ls"]
 "#;
     fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
 
@@ -160,7 +160,7 @@ fn test_hook_execution_resilience() -> Result<()> {
     // Create config with a failing command
     let config_content = r#"
 [hooks]
-post-create = ["exit 1", "echo 'This should still run'"]
+post-create = ["false", "ls"]
 "#;
     fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
 
