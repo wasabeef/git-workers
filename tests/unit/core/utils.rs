@@ -80,6 +80,12 @@ fn test_press_any_key_to_continue() {
 
 #[test]
 fn test_terminal_operations() {
+    // Skip this test in CI or non-terminal environments
+    if std::env::var("CI").is_ok() || !console::Term::stderr().is_term() {
+        // In CI environment, we can't test terminal operations
+        return;
+    }
+
     // Test that terminal functions exist
     let terminal = get_terminal();
     // Just ensure it doesn't panic
