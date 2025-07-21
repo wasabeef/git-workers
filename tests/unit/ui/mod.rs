@@ -13,15 +13,12 @@ use git_workers::ui::{MockUI, UserInterface};
 
 #[test]
 fn test_menu_item_display() {
-    assert_eq!(MenuItem::CreateWorktree.to_string(), "Create new worktree");
-    assert_eq!(MenuItem::DeleteWorktree.to_string(), "Delete a worktree");
-    assert_eq!(
-        MenuItem::SwitchWorktree.to_string(),
-        "Switch to another worktree"
-    );
-    assert_eq!(MenuItem::RenameWorktree.to_string(), "Rename a worktree");
-    assert_eq!(MenuItem::EditHooks.to_string(), "Edit hooks configuration");
-    assert_eq!(MenuItem::Exit.to_string(), "Exit");
+    assert_eq!(MenuItem::CreateWorktree.to_string(), "+  Create worktree");
+    assert_eq!(MenuItem::DeleteWorktree.to_string(), "-  Delete worktree");
+    assert_eq!(MenuItem::SwitchWorktree.to_string(), "→  Switch worktree");
+    assert_eq!(MenuItem::RenameWorktree.to_string(), "*  Rename worktree");
+    assert_eq!(MenuItem::EditHooks.to_string(), "⚙  Edit hooks");
+    assert_eq!(MenuItem::Exit.to_string(), "x  Exit");
 }
 
 // ============================================================================
