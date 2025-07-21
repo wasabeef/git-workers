@@ -1,6 +1,6 @@
 [package]
 name = "git-workers"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Daichi Furiya"]
 description = "Interactive Git worktree manager with shell integration"
@@ -38,9 +38,19 @@ indicatif = "0.17"
 unicode-width = "0.2.1"
 
 [dev-dependencies]
+# Basic test utilities
 tempfile = "3.8"
 assert_cmd = "2.0"
 predicates = "3.1"
+
+# Additional test utilities
+serial_test = "3.2"  # For tests that need sequential execution
+mockall = "0.13"     # For mocking in unit tests
+test-case = "3.3"    # For parameterized tests
+proptest = "1.5"     # For property-based testing
+criterion = "0.5"    # For benchmarking (performance tests)
+fake = "2.10"        # For generating test data
+rstest = "0.23"      # For fixture-based testing
 
 [profile.release]
 codegen-units = 1
