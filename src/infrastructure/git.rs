@@ -295,64 +295,46 @@ impl GitWorktreeManager {
     /// For repositories with many worktrees, this significantly reduces the
     /// total time compared to sequential processing.
     pub fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>> {
-        let mut worktrees;
+        let mut worktrees = Vec::new();
         let worktree_names = self.repo.worktrees()?;
-
-        // Use parallel processing for better performance
-        use std::sync::{Arc, Mutex};
-        use std::thread;
-
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let mut handles = vec![];
 
         for name in worktree_names.iter().flatten() {
             if let Ok(worktree) = self.repo.find_worktree(name) {
                 let path = worktree.path();
                 let is_current = self.is_current_worktree(path);
-                let name_clone = name.to_string();
-                let path_clone = path.to_path_buf();
                 let is_locked = worktree.is_locked().is_ok();
-                let results_clone = Arc::clone(&results);
 
-                // Spawn thread for each worktree to parallelize repository operations
-                let handle = thread::spawn(move || {
-                    let branch = if let Ok(wt_repo) = Repository::open(&path_clone) {
-                        wt_repo
-                            .head()
-                            .ok()
-                            .and_then(|h| h.shorthand().map(|s| s.to_string()))
-                            .unwrap_or_else(|| String::from(DEFAULT_BRANCH_DETACHED))
+                let branch = if let Ok(wt_repo) = Repository::open(path) {
+                    if let Ok(head) = wt_repo.head() {
+                        if let Some(shorthand) = head.shorthand() {
+                            shorthand.to_string()
+                        } else {
+                            String::from(DEFAULT_BRANCH_DETACHED)
+                        }
                     } else {
-                        String::from(DEFAULT_BRANCH_UNKNOWN)
-                    };
+                        String::from(DEFAULT_BRANCH_DETACHED)
+                    }
+                } else {
+                    String::from(DEFAULT_BRANCH_UNKNOWN)
+                };
 
-                    // Get additional status info for the worktree
-                    let worktree_status = get_worktree_status(&path_clone);
+                // Get additional status info for the worktree
+                let worktree_status = get_worktree_status(path);
 
-                    let info = WorktreeInfo {
-                        name: name_clone,
-                        path: path_clone,
-                        branch,
-                        is_locked,
-                        is_current,
-                        has_changes: worktree_status.has_changes,
-                        last_commit: worktree_status.last_commit,
-                        ahead_behind: worktree_status.ahead_behind,
-                    };
+                let info = WorktreeInfo {
+                    name: name.to_string(),
+                    path: path.to_path_buf(),
+                    branch,
+                    is_locked,
+                    is_current,
+                    has_changes: worktree_status.has_changes,
+                    last_commit: worktree_status.last_commit,
+                    ahead_behind: worktree_status.ahead_behind,
+                };
 
-                    results_clone.lock().unwrap().push(info);
-                });
-
-                handles.push(handle);
+                worktrees.push(info);
             }
         }
-
-        // Wait for all threads to complete
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        worktrees = Arc::try_unwrap(results).unwrap().into_inner().unwrap();
 
         // Sort by name for consistent ordering
         worktrees.sort_by(|a, b| a.name.cmp(&b.name));
@@ -370,9 +352,107 @@ impl GitWorktreeManager {
     ///
     /// `true` if the current working directory is within the given worktree path
     fn is_current_worktree(&self, path: &std::path::Path) -> bool {
-        std::env::current_dir()
-            .map(|dir| dir.starts_with(path))
-            .unwrap_or(false)
+        let current_dir = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(_) => return false,
+        };
+
+        // Try to canonicalize both paths for accurate comparison
+        match (current_dir.canonicalize(), path.canonicalize()) {
+            (Ok(current_canonical), Ok(path_canonical)) => {
+                // Both paths canonicalized successfully - use canonical comparison
+                current_canonical.starts_with(&path_canonical)
+            }
+            _ => {
+                // Canonicalization failed for one or both paths
+                // Fallback to absolute path comparison
+                let current_absolute = if current_dir.is_absolute() {
+                    current_dir
+                } else {
+                    // Convert relative path to absolute
+                    match std::env::current_dir().map(|cwd| cwd.join(&current_dir)) {
+                        Ok(abs_path) => abs_path,
+                        Err(_) => current_dir,
+                    }
+                };
+
+                let path_absolute = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    // Convert relative path to absolute from repository base
+                    let repo_base = if let Some(workdir) = self.repo.workdir() {
+                        workdir.to_path_buf()
+                    } else {
+                        // For bare repositories, use the repository path
+                        self.repo.path().to_path_buf()
+                    };
+                    repo_base.join(path)
+                };
+
+                // Normalize paths by removing redundant components
+                let current_normalized = self.normalize_path(&current_absolute);
+                let path_normalized = self.normalize_path(&path_absolute);
+
+                current_normalized.starts_with(&path_normalized)
+            }
+        }
+    }
+
+    /// Normalizes a path by removing redundant components like "." and ".."
+    ///
+    /// This method provides a cross-platform way to normalize paths when
+    /// canonicalization fails (e.g., for non-existent paths or due to permissions).
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to normalize
+    ///
+    /// # Returns
+    ///
+    /// A normalized PathBuf with redundant components removed
+    fn normalize_path(&self, path: &std::path::Path) -> std::path::PathBuf {
+        use std::path::Component;
+
+        let mut normalized = std::path::PathBuf::new();
+
+        for component in path.components() {
+            match component {
+                Component::Prefix(..) => normalized.push(component),
+                Component::RootDir => normalized.push(component),
+                Component::CurDir => {
+                    // Skip "." components
+                }
+                Component::ParentDir => {
+                    // Handle ".." by removing the last component if possible
+                    if let Some(last_component) = normalized.components().next_back() {
+                        match last_component {
+                            Component::Prefix(..) | Component::RootDir => {
+                                // Cannot go up from root or prefix
+                                normalized.push(component);
+                            }
+                            Component::ParentDir => {
+                                // Multiple ".." in sequence
+                                normalized.push(component);
+                            }
+                            Component::Normal(_) => {
+                                // Remove the previous normal component
+                                normalized.pop();
+                            }
+                            Component::CurDir => {
+                                // Should not happen since we skip CurDir above
+                                normalized.push(component);
+                            }
+                        }
+                    } else {
+                        // No components to remove, keep the ".."
+                        normalized.push(component);
+                    }
+                }
+                Component::Normal(_) => normalized.push(component),
+            }
+        }
+
+        normalized
     }
 
     /// Gets the current branch name for a worktree
@@ -1698,6 +1778,44 @@ mod tests {
         assert!(status.last_commit.is_none());
         assert!(status.ahead_behind.is_none());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_normalize_path_basic() -> Result<()> {
+        if let Ok(manager) = GitWorktreeManager::new() {
+            let test_path = std::path::Path::new("/home/user/./project/../project/src");
+            let normalized = manager.normalize_path(test_path);
+            let expected = std::path::PathBuf::from("/home/user/project/src");
+            assert_eq!(normalized, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_normalize_path_with_parent_dirs() -> Result<()> {
+        if let Ok(manager) = GitWorktreeManager::new() {
+            let test_path = std::path::Path::new("/home/user/project/../../user/project");
+            let normalized = manager.normalize_path(test_path);
+            let expected = std::path::PathBuf::from("/home/user/project");
+            assert_eq!(normalized, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_current_worktree_same_path() -> Result<()> {
+        if let Ok(manager) = GitWorktreeManager::new() {
+            // Test with current directory
+            if let Ok(current_dir) = std::env::current_dir() {
+                // Current directory should match itself
+                assert!(manager.is_current_worktree(&current_dir));
+
+                // A subdirectory of current should not match
+                let subdir = current_dir.join("subdir");
+                assert!(!manager.is_current_worktree(&subdir));
+            }
+        }
         Ok(())
     }
 }
