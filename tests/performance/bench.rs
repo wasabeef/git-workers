@@ -4,7 +4,7 @@
 //! of critical operations like worktree creation and branch listing.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use git_workers::infrastructure::git::GitWorktreeManager;
+use git_workers::git::GitWorktreeManager;
 use tempfile::TempDir;
 
 fn benchmark_worktree_creation(c: &mut Criterion) {

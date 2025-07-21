@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use git_workers::config::Config;
-use git_workers::infrastructure::git::GitWorktreeManager;
+use git_workers::git::GitWorktreeManager;
 use std::fs;
 use std::process::Command;
 use std::time::Instant;
@@ -51,12 +51,15 @@ fn setup_test_repo() -> Result<(TempDir, GitWorktreeManager)> {
 
 #[test]
 fn bench_list_worktrees_small_repo() -> Result<()> {
-    let (_temp_dir, manager) = setup_test_repo()?;
-    let repo_root = manager.get_default_worktree_base_path()?;
+    let (temp_dir, manager) = setup_test_repo()?;
 
     // Create a few worktrees
     for i in 1..=5 {
-        let worktree_path = repo_root.join(format!("wt-{i}"));
+        let worktree_path = temp_dir
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("perf-test-wt-{i}"));
         manager.create_worktree_from_head(&worktree_path, &format!("wt-{i}"))?;
     }
 
@@ -80,13 +83,16 @@ fn bench_list_worktrees_small_repo() -> Result<()> {
 #[test]
 #[ignore = "Resource intensive test"]
 fn bench_list_worktrees_large_repo() -> Result<()> {
-    let (_temp_dir, manager) = setup_test_repo()?;
-    let repo_root = manager.get_default_worktree_base_path()?;
+    let (temp_dir, manager) = setup_test_repo()?;
 
     // Create many worktrees
     for i in 1..=50 {
         // Reduced from 100 for test performance
-        let worktree_path = repo_root.join(format!("wt-{i}"));
+        let worktree_path = temp_dir
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("perf-test-wt-{i}"));
         manager.create_worktree_from_head(&worktree_path, &format!("wt-{i}"))?;
     }
 
@@ -109,15 +115,18 @@ fn bench_list_worktrees_large_repo() -> Result<()> {
 
 #[test]
 fn bench_create_worktree() -> Result<()> {
-    let (_temp_dir, manager) = setup_test_repo()?;
-    let repo_root = manager.get_default_worktree_base_path()?;
+    let (temp_dir, manager) = setup_test_repo()?;
 
     // Benchmark worktree creation
     let start = Instant::now();
     let iterations = 10;
 
     for i in 0..iterations {
-        let worktree_path = repo_root.join(format!("bench-wt-{i}"));
+        let worktree_path = temp_dir
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("perf-bench-wt-{i}"));
         manager.create_worktree_from_head(&worktree_path, &format!("bench-wt-{i}"))?;
     }
 
@@ -297,11 +306,10 @@ fn bench_git_operations() -> Result<()> {
 
 #[test]
 fn bench_worktree_status_check() -> Result<()> {
-    let (_temp_dir, manager) = setup_test_repo()?;
-    let repo_root = manager.get_default_worktree_base_path()?;
+    let (temp_dir, manager) = setup_test_repo()?;
 
     // Create worktree and add some changes
-    let worktree_path = repo_root.join("status-wt");
+    let worktree_path = temp_dir.path().parent().unwrap().join("perf-status-wt");
     manager.create_worktree_from_head(&worktree_path, "status-wt")?;
 
     // Add uncommitted changes
@@ -326,12 +334,15 @@ fn bench_worktree_status_check() -> Result<()> {
 
 #[test]
 fn bench_memory_usage_simulation() -> Result<()> {
-    let (_temp_dir, manager) = setup_test_repo()?;
-    let repo_root = manager.get_default_worktree_base_path()?;
+    let (temp_dir, manager) = setup_test_repo()?;
 
     // Create multiple worktrees to simulate memory usage
     for i in 1..=10 {
-        let worktree_path = repo_root.join(format!("mem-wt-{i}"));
+        let worktree_path = temp_dir
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("perf-mem-wt-{i}"));
         manager.create_worktree_from_head(&worktree_path, &format!("mem-wt-{i}"))?;
     }
 

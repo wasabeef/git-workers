@@ -7,7 +7,7 @@ use anyhow::Result;
 use git_workers::commands::{
     determine_worktree_path, validate_worktree_creation, BranchSource, WorktreeCreateConfig,
 };
-use git_workers::infrastructure::git::GitWorktreeManager;
+use git_workers::git::GitWorktreeManager;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
