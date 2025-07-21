@@ -214,11 +214,62 @@ mod tests {
 
     #[test]
     fn test_constants_are_accessible() {
+        let expected_question_icon = "?";
+        let expected_space_char = ' ';
         // Test that all required constants are accessible
-        assert_eq!(ICON_QUESTION, "?");
+        assert_eq!(ICON_QUESTION, expected_question_icon);
         assert_eq!(CTRL_U, '\u{15}');
         assert_eq!(CTRL_W, '\u{17}');
-        assert_eq!(CHAR_SPACE, ' ');
+        assert_eq!(CHAR_SPACE, expected_space_char);
         assert_eq!(ANSI_CLEAR_LINE, "\r\x1b[K");
+    }
+
+    // Add 6 new tests for better coverage
+    #[test]
+    fn test_ansi_sequence_structure() {
+        let clear_line = ANSI_CLEAR_LINE;
+        assert!(clear_line.starts_with('\r'));
+        assert!(clear_line.contains('\u{1b}'));
+        assert!(clear_line.contains('['));
+        assert!(clear_line.ends_with('K'));
+    }
+
+    #[test]
+    fn test_control_character_values() {
+        let expected_ctrl_u_value = 21;
+        let expected_ctrl_w_value = 23;
+        assert_eq!(CTRL_U as u8, expected_ctrl_u_value);
+        assert_eq!(CTRL_W as u8, expected_ctrl_w_value);
+    }
+
+    #[test]
+    fn test_char_constants_properties() {
+        assert!(CHAR_SPACE.is_whitespace());
+        assert!(CHAR_SPACE.is_ascii());
+        assert!(!CHAR_SPACE.is_control());
+    }
+
+    #[test]
+    fn test_format_default_value_constant() {
+        let test_value = "test";
+        let formatted = FORMAT_DEFAULT_VALUE.replace("{}", test_value);
+        assert!(formatted.contains(test_value));
+        assert!(formatted.starts_with('['));
+        assert!(formatted.ends_with(']'));
+    }
+
+    #[test]
+    fn test_icon_question_is_printable() {
+        for ch in ICON_QUESTION.chars() {
+            assert!(!ch.is_control());
+        }
+    }
+
+    #[test]
+    fn test_function_types_correct() {
+        // Test that functions have expected types at compile time
+        let _simple_input: fn(&str) -> Option<String> = input_esc_raw;
+        let _default_input: fn(&str, &str) -> Option<String> = input_esc_with_default_raw;
+        let _core_input: fn(&str, Option<&str>) -> Option<String> = input_with_esc_support_raw;
     }
 }
