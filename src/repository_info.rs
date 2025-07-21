@@ -120,3 +120,32 @@ pub fn get_repository_info() -> String {
             .to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_repository_info_non_git() {
+        // This test will succeed in a non-git context
+        let info = get_repository_info();
+        assert!(!info.is_empty());
+        // Should return some directory name
+    }
+
+    #[test]
+    fn test_constants_are_used() {
+        // Test that our constants are defined and accessible
+        assert_eq!(UNKNOWN_VALUE, "unknown");
+        assert_eq!(MAIN_SUFFIX, " (main)");
+        assert_eq!(GIT_COMMONDIR_FILE, "commondir");
+    }
+
+    #[test]
+    fn test_repository_info_function_exists() {
+        // Test that the function can be called without panicking
+        let _info = get_repository_info();
+        // Function should not panic
+        // Test passes if function completes without panicking
+    }
+}

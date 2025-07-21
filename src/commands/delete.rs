@@ -262,7 +262,7 @@ pub fn delete_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
     }
 }
 
-#[cfg(false)] // Temporarily disabled due to WorktreeInfo struct field changes
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -300,12 +300,32 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "WorktreeInfo struct fields need to be updated"]
     fn test_get_deletable_worktrees_filter_main() {
-        // TODO: Update WorktreeInfo struct initialization to match actual fields
-        let worktrees = vec![];
+        let worktrees = vec![
+            WorktreeInfo {
+                name: "main".to_string(),
+                path: PathBuf::from("/tmp/main"),
+                branch: "main".to_string(),
+                is_current: true,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+                is_locked: false,
+            },
+            WorktreeInfo {
+                name: "feature".to_string(),
+                path: PathBuf::from("/tmp/feature"),
+                branch: "feature".to_string(),
+                is_current: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+                is_locked: false,
+            },
+        ];
         let deletable = get_deletable_worktrees(&worktrees);
-        assert!(deletable.is_empty());
+        assert_eq!(deletable.len(), 1);
+        assert_eq!(deletable[0].name, "feature");
     }
 
     #[test]
@@ -316,11 +336,27 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "WorktreeInfo struct fields need to be updated"]
-    fn test_analyze_deletion_basic() {
-        // TODO: Update WorktreeInfo struct initialization to match actual fields
-        // This test will be enabled once struct fields are corrected
-        assert!(true); // Placeholder
+    fn test_deletion_analysis_creation() {
+        let worktree = WorktreeInfo {
+            name: "feature".to_string(),
+            path: PathBuf::from("/tmp/feature"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        let analysis = DeletionAnalysis {
+            worktree: worktree.clone(),
+            is_branch_unique: true,
+            delete_branch_recommended: true,
+        };
+
+        assert_eq!(analysis.worktree.name, "feature");
+        assert!(analysis.is_branch_unique);
+        assert!(analysis.delete_branch_recommended);
     }
 
     #[test]

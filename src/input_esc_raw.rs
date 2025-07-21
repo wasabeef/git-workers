@@ -187,3 +187,38 @@ pub fn input_esc_raw(prompt: &str) -> Option<String> {
 pub fn input_esc_with_default_raw(prompt: &str, default: &str) -> Option<String> {
     input_with_esc_support_raw(prompt, Some(default))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_input_esc_raw_function_exists() {
+        // Test that the function signature is correct
+        // We can't actually test the interactive behavior in unit tests
+        // but we can ensure the function compiles and is callable
+        let _f: fn(&str) -> Option<String> = input_esc_raw;
+    }
+
+    #[test]
+    fn test_input_esc_with_default_function_exists() {
+        // Test that the function signature is correct
+        let _f: fn(&str, &str) -> Option<String> = input_esc_with_default_raw;
+    }
+
+    #[test]
+    fn test_input_with_esc_support_raw_function_exists() {
+        // Test that the core function signature is correct
+        let _f: fn(&str, Option<&str>) -> Option<String> = input_with_esc_support_raw;
+    }
+
+    #[test]
+    fn test_constants_are_accessible() {
+        // Test that all required constants are accessible
+        assert_eq!(ICON_QUESTION, "?");
+        assert_eq!(CTRL_U, '\u{15}');
+        assert_eq!(CTRL_W, '\u{17}');
+        assert_eq!(CHAR_SPACE, ' ');
+        assert_eq!(ANSI_CLEAR_LINE, "\r\x1b[K");
+    }
+}

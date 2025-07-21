@@ -643,4 +643,69 @@ copy = [".env", "config.local"]
         let repo_config = RepositoryConfig::default();
         assert!(repo_config.url.is_none());
     }
+
+    #[test]
+    fn test_config_with_repository_url() {
+        let toml_content = r#"
+[repository]
+url = "https://github.com/user/repo"
+
+[hooks]
+post-create = ["echo 'test'"]
+"#;
+        let config: Config = toml::from_str(toml_content).unwrap();
+        assert_eq!(
+            config.repository.url,
+            Some("https://github.com/user/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        let mut config = Config::default();
+        config.repository.url = Some("https://example.com/repo.git".to_string());
+        config.files.copy = vec![".env".to_string(), "config.json".to_string()];
+
+        let serialized = toml::to_string(&config).unwrap();
+        let deserialized: Config = toml::from_str(&serialized).unwrap();
+
+        assert_eq!(config.repository.url, deserialized.repository.url);
+        assert_eq!(config.files.copy, deserialized.files.copy);
+    }
+
+    #[test]
+    fn test_empty_config_parsing() {
+        let empty_toml = "";
+        let config: Config = toml::from_str(empty_toml).unwrap();
+        assert!(config.hooks.is_empty());
+        assert!(config.files.copy.is_empty());
+        assert!(config.repository.url.is_none());
+    }
+
+    #[test]
+    fn test_config_with_complex_hooks() {
+        let toml_content = r#"
+[hooks]
+post-create = ["npm install", "npm run build"]
+pre-remove = ["rm -rf node_modules"]
+post-switch = ["echo 'Switched to {{worktree_name}}'"]
+"#;
+        let config: Config = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.hooks.len(), 3);
+        assert!(config.hooks.contains_key("post-create"));
+        assert!(config.hooks.contains_key("pre-remove"));
+        assert!(config.hooks.contains_key("post-switch"));
+    }
+
+    #[test]
+    fn test_files_config_with_source() {
+        let toml_content = r#"
+[files]
+copy = [".env", ".secrets"]
+source = "../main-worktree"
+"#;
+        let config: Config = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.files.copy.len(), 2);
+        assert_eq!(config.files.source, Some("../main-worktree".to_string()));
+    }
 }
