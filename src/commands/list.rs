@@ -3,7 +3,6 @@ use colored::*;
 
 use crate::constants::{section_header, WARNING_NO_WORKTREES};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
-use crate::repository_info::get_repository_info;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::press_any_key_to_continue;
 
@@ -94,7 +93,7 @@ pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterf
     let worktrees = manager.list_worktrees()?;
 
     println!();
-    let header = section_header("Git Worktrees");
+    let header = section_header("Worktrees");
     println!("{header}");
     println!();
 
@@ -106,28 +105,47 @@ pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterf
         return Ok(());
     }
 
-    // Display repository info
-    let repo_info = get_repository_info();
-    println!("Repository: {}", repo_info.bright_cyan());
-    println!();
+    // Print table header
+    println!(
+        "  {:<27} {:<37} {} {}",
+        "Name".bold(),
+        "Branch".bold(),
+        "Modified".bold(),
+        "Path".bold()
+    );
+    println!(
+        "  {} {} {} {}",
+        "-".repeat(27).dimmed(),
+        "-".repeat(37).dimmed(),
+        "-".repeat(8).dimmed(),
+        "-".repeat(40).dimmed()
+    );
 
-    // Display worktrees
+    // Display worktrees in table format
     for worktree in &worktrees {
+        let current_indicator = if worktree.is_current { "▸ " } else { "  " };
+
         let name = if worktree.is_current {
-            format!("{} [current]", worktree.name.bright_white().bold())
+            worktree.name.bright_white().bold().to_string()
         } else {
-            worktree.name.to_string()
+            worktree.name.clone()
         };
 
-        let branch = worktree.branch.yellow();
+        let branch = &worktree.branch;
+        let modified = if worktree.has_changes { "Yes" } else { "No" };
         let path = worktree.path.display();
 
-        println!("• {name}");
-        println!("  Branch: {branch}");
-        println!("  Path:   {path}");
-        println!();
+        println!(
+            "{}{:<27} {:<37} {:<8} {}",
+            current_indicator.green(),
+            name,
+            branch.yellow(),
+            modified,
+            path.to_string().dimmed()
+        );
     }
 
+    println!();
     press_any_key_to_continue()?;
 
     Ok(())
