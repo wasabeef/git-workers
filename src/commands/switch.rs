@@ -236,7 +236,7 @@ pub fn switch_worktree_with_ui(
     Ok(true)
 }
 
-#[cfg(false)] // Temporarily disabled due to WorktreeInfo struct field changes
+#[cfg(test)] // Re-enabled tests with corrected WorktreeInfo fields
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -308,30 +308,30 @@ mod tests {
             WorktreeInfo {
                 name: "zzz-last".to_string(),
                 path: PathBuf::from("/tmp/zzz"),
-                branch: Some("zzz-branch".to_string()),
-                commit_info: None,
-                head: "HEAD".to_string(),
-                is_bare: false,
-                is_detached: false,
+                branch: "zzz-branch".to_string(),
                 is_locked: false,
-                lock_reason: None,
+                is_current: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
             },
             WorktreeInfo {
                 name: "aaa-first".to_string(),
                 path: PathBuf::from("/tmp/aaa"),
-                branch: Some("aaa-branch".to_string()),
-                commit_info: None,
-                head: "HEAD".to_string(),
-                is_bare: false,
-                is_detached: false,
+                branch: "aaa-branch".to_string(),
                 is_locked: false,
-                lock_reason: None,
+                is_current: true,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
             },
         ];
 
-        let sorted = sort_worktrees_for_display(&worktrees);
-        assert_eq!(sorted[0].name, "aaa-first");
+        let sorted = sort_worktrees_for_display(worktrees);
+        assert_eq!(sorted[0].name, "aaa-first"); // Current worktree should be first
         assert_eq!(sorted[1].name, "zzz-last");
+        assert!(sorted[0].is_current);
+        assert!(!sorted[1].is_current);
     }
 
     #[test]
@@ -339,18 +339,18 @@ mod tests {
         let worktrees = vec![WorktreeInfo {
             name: "main".to_string(),
             path: PathBuf::from("/tmp/main"),
-            branch: Some("main".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
+            branch: "main".to_string(),
             is_locked: false,
-            lock_reason: None,
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
         }];
 
         let analysis = analyze_switch_target(&worktrees, 0).unwrap();
-        assert_eq!(analysis.selected_worktree.name, "main");
-        assert!(!analysis.is_already_current); // Assuming we're not currently in main
+        assert_eq!(analysis.worktrees[0].name, "main");
+        assert!(!analysis.is_already_current);
+        assert_eq!(analysis.current_worktree_index, None);
     }
 
     #[test]

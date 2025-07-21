@@ -679,7 +679,7 @@ pub fn create_worktree_with_ui(
     }
 }
 
-#[cfg(false)] // Temporarily disabled due to WorktreeInfo struct field changes
+#[cfg(test)] // Re-enabled tests with corrections
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -789,8 +789,6 @@ mod tests {
 
     #[test]
     fn test_validate_worktree_creation_no_conflicts() {
-        use crate::git::WorktreeInfo;
-
         let existing_worktrees = vec![];
         let path = PathBuf::from("/tmp/new-worktree");
 
