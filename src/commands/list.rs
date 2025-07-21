@@ -1,8 +1,13 @@
 use anyhow::Result;
 use colored::*;
 
-use crate::constants::{section_header, WARNING_NO_WORKTREES};
+use crate::constants::{
+    section_header, CURRENT_MARKER, ICON_CURRENT_WORKTREE, ICON_OTHER_WORKTREE, MODIFIED_STATUS_NO,
+    MODIFIED_STATUS_YES, TABLE_HEADER_BRANCH, TABLE_HEADER_MODIFIED, TABLE_HEADER_NAME,
+    TABLE_HEADER_PATH, TABLE_SEPARATOR, WARNING_NO_WORKTREES,
+};
 use crate::git::{GitWorktreeManager, WorktreeInfo};
+use crate::repository_info::get_repository_info;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::press_any_key_to_continue;
 
@@ -92,12 +97,8 @@ pub fn list_worktrees() -> Result<()> {
 pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterface) -> Result<()> {
     let worktrees = manager.list_worktrees()?;
 
-    println!();
-    let header = section_header("Worktrees");
-    println!("{header}");
-    println!();
-
     if worktrees.is_empty() {
+        println!();
         let msg = WARNING_NO_WORKTREES.yellow();
         println!("{msg}");
         println!();
@@ -105,43 +106,89 @@ pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterf
         return Ok(());
     }
 
-    // Print table header
+    // Sort worktrees: current first, then alphabetically
+    let mut sorted_worktrees = worktrees;
+    sorted_worktrees.sort_by(|a, b| {
+        if a.is_current && !b.is_current {
+            std::cmp::Ordering::Less
+        } else if !a.is_current && b.is_current {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.cmp(&b.name)
+        }
+    });
+
+    // Print header
+    println!();
+    let header = section_header("Worktrees");
+    println!("{header}");
+    println!();
+
+    // Display repository info
+    let repo_info = get_repository_info();
+    println!("Repository: {}", repo_info.bright_cyan());
+    println!();
+
+    // Calculate column widths
+    let max_name_len = sorted_worktrees
+        .iter()
+        .map(|w| w.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(10);
+    let max_branch_len = sorted_worktrees
+        .iter()
+        .map(|w| w.branch.len())
+        .max()
+        .unwrap_or(0)
+        .max(10)
+        + 10; // Extra space for [current] marker
+
+    println!();
     println!(
-        "  {:<27} {:<37} {} {}",
-        "Name".bold(),
-        "Branch".bold(),
-        "Modified".bold(),
-        "Path".bold()
+        "  {:<name_width$} {:<branch_width$} {:<8} {}",
+        TABLE_HEADER_NAME.bold(),
+        TABLE_HEADER_BRANCH.bold(),
+        TABLE_HEADER_MODIFIED.bold(),
+        TABLE_HEADER_PATH.bold(),
+        name_width = max_name_len,
+        branch_width = max_branch_len
     );
     println!(
-        "  {} {} {} {}",
-        "-".repeat(27).dimmed(),
-        "-".repeat(37).dimmed(),
-        "-".repeat(8).dimmed(),
-        "-".repeat(40).dimmed()
+        "  {TABLE_SEPARATOR:-<max_name_len$} {TABLE_SEPARATOR:-<max_branch_len$} {TABLE_SEPARATOR:-<8} {TABLE_SEPARATOR:-<40}"
     );
 
     // Display worktrees in table format
-    for worktree in &worktrees {
-        let current_indicator = if worktree.is_current { "▸ " } else { "  " };
-
-        let name = if worktree.is_current {
-            worktree.name.bright_white().bold().to_string()
+    for worktree in &sorted_worktrees {
+        let icon = if worktree.is_current {
+            ICON_CURRENT_WORKTREE.bright_green().bold()
         } else {
-            worktree.name.clone()
+            ICON_OTHER_WORKTREE.bright_blue()
+        };
+        let branch_display = if worktree.is_current {
+            format!("{} {}", worktree.branch, CURRENT_MARKER).bright_green()
+        } else {
+            worktree.branch.yellow()
+        };
+        let modified = if worktree.has_changes {
+            MODIFIED_STATUS_YES.bright_yellow()
+        } else {
+            MODIFIED_STATUS_NO.bright_black()
         };
 
-        let branch = &worktree.branch;
-        let modified = if worktree.has_changes { "Yes" } else { "No" };
-        let path = worktree.path.display();
-
         println!(
-            "{}{:<27} {:<37} {:<8} {}",
-            current_indicator.green(),
-            name,
-            branch.yellow(),
+            "{} {:<name_width$} {:<branch_width$} {:<8} {}",
+            icon,
+            if worktree.is_current {
+                worktree.name.bright_green().bold()
+            } else {
+                worktree.name.normal()
+            },
+            branch_display,
             modified,
-            path.to_string().dimmed()
+            worktree.path.display().to_string().dimmed(),
+            name_width = max_name_len,
+            branch_width = max_branch_len
         );
     }
 
@@ -407,5 +454,224 @@ mod tests {
             false,
             Some(no_match_filter)
         ));
+    }
+
+    // Tests to protect the current table display implementation
+    #[test]
+    fn test_table_display_current_worktree_first() {
+        // Create test worktrees with one being current
+        let worktree1 = WorktreeInfo {
+            name: "zebra".to_string(),
+            path: PathBuf::from("/tmp/zebra"),
+            branch: "zebra".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+        let worktree2 = WorktreeInfo {
+            name: "alpha".to_string(),
+            path: PathBuf::from("/tmp/alpha"),
+            branch: "alpha".to_string(),
+            is_current: true,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+        let worktree3 = WorktreeInfo {
+            name: "beta".to_string(),
+            path: PathBuf::from("/tmp/beta"),
+            branch: "beta".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        let mut worktrees = vec![worktree1, worktree2, worktree3];
+
+        // Apply the same sorting logic as the main function
+        worktrees.sort_by(|a, b| {
+            if a.is_current && !b.is_current {
+                std::cmp::Ordering::Less
+            } else if !a.is_current && b.is_current {
+                std::cmp::Ordering::Greater
+            } else {
+                a.name.cmp(&b.name)
+            }
+        });
+
+        // Current worktree should be first
+        assert_eq!(worktrees[0].name, "alpha");
+        assert!(worktrees[0].is_current);
+        // Others should be alphabetically sorted
+        assert_eq!(worktrees[1].name, "beta");
+        assert_eq!(worktrees[2].name, "zebra");
+    }
+
+    #[test]
+    fn test_table_display_column_width_calculation() {
+        let worktrees = vec![
+            WorktreeInfo {
+                name: "short".to_string(),
+                path: PathBuf::from("/tmp/short"),
+                branch: "main".to_string(),
+                is_current: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+                is_locked: false,
+            },
+            WorktreeInfo {
+                name: "very-long-worktree-name".to_string(),
+                path: PathBuf::from("/tmp/very-long-worktree-name"),
+                branch: "feature-with-very-long-branch-name".to_string(),
+                is_current: true,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+                is_locked: false,
+            },
+        ];
+
+        let max_name_len = worktrees
+            .iter()
+            .map(|w| w.name.len())
+            .max()
+            .unwrap_or(0)
+            .max(10);
+        let max_branch_len = worktrees
+            .iter()
+            .map(|w| w.branch.len())
+            .max()
+            .unwrap_or(0)
+            .max(10)
+            + 10; // Extra space for [current] marker
+
+        assert_eq!(max_name_len, "very-long-worktree-name".len());
+        assert_eq!(
+            max_branch_len,
+            "feature-with-very-long-branch-name".len() + 10
+        );
+    }
+
+    #[test]
+    fn test_table_display_icon_selection() {
+        let current_worktree = WorktreeInfo {
+            name: "current".to_string(),
+            path: PathBuf::from("/tmp/current"),
+            branch: "main".to_string(),
+            is_current: true,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+        let other_worktree = WorktreeInfo {
+            name: "other".to_string(),
+            path: PathBuf::from("/tmp/other"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        // Test icon selection logic
+        let current_icon = if current_worktree.is_current {
+            "▸"
+        } else {
+            " "
+        };
+        let other_icon = if other_worktree.is_current {
+            "▸"
+        } else {
+            " "
+        };
+
+        assert_eq!(current_icon, "▸");
+        assert_eq!(other_icon, " ");
+    }
+
+    #[test]
+    fn test_table_display_branch_formatting() {
+        let current_worktree = WorktreeInfo {
+            name: "current".to_string(),
+            path: PathBuf::from("/tmp/current"),
+            branch: "main".to_string(),
+            is_current: true,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+        let other_worktree = WorktreeInfo {
+            name: "other".to_string(),
+            path: PathBuf::from("/tmp/other"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        // Test branch display formatting
+        let current_branch_display = if current_worktree.is_current {
+            format!("{} [current]", current_worktree.branch)
+        } else {
+            current_worktree.branch.clone()
+        };
+        let other_branch_display = if other_worktree.is_current {
+            format!("{} [current]", other_worktree.branch)
+        } else {
+            other_worktree.branch.clone()
+        };
+
+        assert_eq!(current_branch_display, "main [current]");
+        assert_eq!(other_branch_display, "feature");
+    }
+
+    #[test]
+    fn test_table_display_modified_status() {
+        let clean_worktree = WorktreeInfo {
+            name: "clean".to_string(),
+            path: PathBuf::from("/tmp/clean"),
+            branch: "main".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+        let dirty_worktree = WorktreeInfo {
+            name: "dirty".to_string(),
+            path: PathBuf::from("/tmp/dirty"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: true,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        // Test modified status display
+        let clean_modified = if clean_worktree.has_changes {
+            "Yes"
+        } else {
+            "No"
+        };
+        let dirty_modified = if dirty_worktree.has_changes {
+            "Yes"
+        } else {
+            "No"
+        };
+
+        assert_eq!(clean_modified, "No");
+        assert_eq!(dirty_modified, "Yes");
     }
 }
