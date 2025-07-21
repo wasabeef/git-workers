@@ -69,10 +69,13 @@ RUST_LOG=debug cargo run
 ### Recommended Tools
 
 - **rustfmt**: For code formatting
+
   ```bash
   rustup component add rustfmt
   ```
+
 - **clippy**: For linting
+
   ```bash
   rustup component add clippy
   ```
