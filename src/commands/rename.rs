@@ -358,147 +358,228 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
     }
 }
 
-#[cfg(false)] // Temporarily disabled due to WorktreeInfo struct field changes
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
     #[test]
     fn test_should_rename_branch_true() {
+        let test_name = "feature";
         // User wants rename and names match
-        assert!(should_rename_branch("feature", "feature", true));
+        assert!(should_rename_branch(test_name, test_name, true));
     }
 
     #[test]
     fn test_should_rename_branch_false_user_doesnt_want() {
+        let test_name = "feature";
         // User doesn't want rename even if names match
-        assert!(!should_rename_branch("feature", "feature", false));
+        assert!(!should_rename_branch(test_name, test_name, false));
     }
 
     #[test]
     fn test_should_rename_branch_false_names_mismatch() {
+        let feature_name = "feature";
+        let main_name = "main";
         // Names don't match even if user wants rename
-        assert!(!should_rename_branch("feature", "main", true));
+        assert!(!should_rename_branch(feature_name, main_name, true));
     }
 
     #[test]
     fn test_rename_config_creation() {
+        let old_name = "old-name";
+        let new_name = "new-name";
         let config = RenameConfig {
-            old_name: "old-name".to_string(),
-            new_name: "new-name".to_string(),
+            old_name: old_name.to_string(),
+            new_name: new_name.to_string(),
             old_path: PathBuf::from("/tmp/old"),
             new_path: PathBuf::from("/tmp/new"),
             rename_branch: true,
         };
 
-        assert_eq!(config.old_name, "old-name");
-        assert_eq!(config.new_name, "new-name");
+        assert_eq!(config.old_name, old_name);
+        assert_eq!(config.new_name, new_name);
         assert!(config.rename_branch);
     }
 
     #[test]
     fn test_worktree_rename_config_creation() {
+        let old_worktree = "old-worktree";
+        let new_worktree = "new-worktree";
+        let old_branch = "old-branch";
+        let new_branch = "new-branch";
         let config = WorktreeRenameConfig {
-            old_name: "old-worktree".to_string(),
-            new_name: "new-worktree".to_string(),
+            old_name: old_worktree.to_string(),
+            new_name: new_worktree.to_string(),
             old_path: PathBuf::from("/tmp/old"),
             new_path: PathBuf::from("/tmp/new"),
-            old_branch: "old-branch".to_string(),
-            new_branch: Some("new-branch".to_string()),
+            old_branch: old_branch.to_string(),
+            new_branch: Some(new_branch.to_string()),
             rename_branch: true,
         };
 
-        assert_eq!(config.old_name, "old-worktree");
-        assert_eq!(config.new_name, "new-worktree");
-        assert_eq!(config.old_branch, "old-branch");
-        assert_eq!(config.new_branch, Some("new-branch".to_string()));
+        assert_eq!(config.old_name, old_worktree);
+        assert_eq!(config.new_name, new_worktree);
+        assert_eq!(config.old_branch, old_branch);
+        assert_eq!(config.new_branch, Some(new_branch.to_string()));
         assert!(config.rename_branch);
     }
 
     #[test]
-    fn test_get_renameable_worktrees_filter_detached() {
+    fn test_get_renameable_worktrees_filter_current() {
+        let main_name = "main";
+        let feature_name = "feature";
         let worktrees = vec![
             WorktreeInfo {
-                name: "main".to_string(),
+                name: main_name.to_string(),
                 path: PathBuf::from("/tmp/main"),
-                branch: Some("main".to_string()),
-                commit_info: None,
-                head: "HEAD".to_string(),
-                is_bare: false,
-                is_detached: false,
+                branch: main_name.to_string(),
+                is_current: true, // Current worktree - should be filtered out
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
                 is_locked: false,
-                lock_reason: None,
             },
             WorktreeInfo {
-                name: "detached".to_string(),
-                path: PathBuf::from("/tmp/detached"),
-                branch: Some(DEFAULT_BRANCH_DETACHED.to_string()),
-                commit_info: None,
-                head: "HEAD".to_string(),
-                is_bare: false,
-                is_detached: true,
+                name: feature_name.to_string(),
+                path: PathBuf::from("/tmp/feature"),
+                branch: feature_name.to_string(),
+                is_current: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
                 is_locked: false,
-                lock_reason: None,
             },
         ];
 
         let renameable = get_renameable_worktrees(&worktrees);
         assert_eq!(renameable.len(), 1);
-        assert_eq!(renameable[0].name, "main");
+        assert_eq!(renameable[0].name, feature_name);
     }
 
     #[test]
     fn test_analyze_rename_requirements_basic() {
+        let feature_name = "feature";
         let worktree = WorktreeInfo {
-            name: "feature".to_string(),
+            name: feature_name.to_string(),
             path: PathBuf::from("/tmp/feature"),
-            branch: Some("feature".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
+            branch: feature_name.to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
             is_locked: false,
-            lock_reason: None,
         };
 
-        let branches = vec!["main".to_string(), "feature".to_string()];
-        let analysis = analyze_rename_requirements(&worktree, &branches);
+        let analysis = analyze_rename_requirements(&worktree).unwrap();
 
-        assert_eq!(analysis.worktree.name, "feature");
+        assert_eq!(analysis.worktree.name, feature_name);
         assert!(analysis.can_rename_branch);
-        assert_eq!(analysis.suggested_branch_name, Some("feature".to_string()));
+        assert_eq!(
+            analysis.suggested_branch_name,
+            Some(feature_name.to_string())
+        );
     }
 
     #[test]
     fn test_validate_rename_operation_valid() {
-        let result = validate_rename_operation(
-            "old-name",
-            "new-name",
-            &PathBuf::from("/tmp/old"),
-            &PathBuf::from("/tmp/new"),
-        );
+        let old_name = "old-name";
+        let new_name = "new-name";
+        let result = validate_rename_operation(old_name, new_name);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_rename_operation_same_name() {
-        let result = validate_rename_operation(
-            "same-name",
-            "same-name",
-            &PathBuf::from("/tmp/old"),
-            &PathBuf::from("/tmp/new"),
-        );
+        let same_name = "same-name";
+        let result = validate_rename_operation(same_name, same_name);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_validate_rename_operation_path_exists() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let existing_path = temp_dir.path().join("existing");
-        std::fs::create_dir(&existing_path).unwrap();
-
-        let result =
-            validate_rename_operation("old", "new", &PathBuf::from("/tmp/old"), &existing_path);
+    fn test_validate_rename_operation_main_worktree() {
+        let main_name = "main";
+        let new_name = "new-name";
+        let result = validate_rename_operation(main_name, new_name);
         assert!(result.is_err());
+
+        let old_name = "old-name";
+        let result = validate_rename_operation(old_name, main_name);
+        assert!(result.is_err());
+    }
+
+    // Add 5 new tests for better coverage
+    #[test]
+    fn test_analyze_rename_requirements_feature_branch() {
+        let worktree_name = "auth";
+        let feature_branch = "feature/auth";
+        let worktree = WorktreeInfo {
+            name: worktree_name.to_string(),
+            path: PathBuf::from("/tmp/auth"),
+            branch: feature_branch.to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        let analysis = analyze_rename_requirements(&worktree).unwrap();
+        assert!(analysis.can_rename_branch);
+        assert!(analysis.is_feature_branch);
+        assert_eq!(
+            analysis.suggested_branch_name,
+            Some(format!("feature/{worktree_name}"))
+        );
+    }
+
+    #[test]
+    fn test_analyze_rename_requirements_detached_head() {
+        let worktree = WorktreeInfo {
+            name: "detached".to_string(),
+            path: PathBuf::from("/tmp/detached"),
+            branch: DEFAULT_BRANCH_DETACHED.to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        let analysis = analyze_rename_requirements(&worktree).unwrap();
+        assert!(!analysis.can_rename_branch);
+        assert!(analysis.suggested_branch_name.is_none());
+    }
+
+    #[test]
+    fn test_validate_rename_operation_empty_names() {
+        let empty_string = "";
+        let valid_name = "valid-name";
+
+        // Empty old name
+        assert!(validate_rename_operation(empty_string, valid_name).is_err());
+
+        // Empty new name
+        assert!(validate_rename_operation(valid_name, empty_string).is_err());
+    }
+
+    #[test]
+    fn test_validate_rename_operation_master_worktree() {
+        let master_name = "master";
+        let new_name = "new-name";
+        let old_name = "old-name";
+
+        // Cannot rename master worktree
+        assert!(validate_rename_operation(master_name, new_name).is_err());
+
+        // Cannot rename to master
+        assert!(validate_rename_operation(old_name, master_name).is_err());
+    }
+
+    #[test]
+    fn test_get_renameable_worktrees_empty_list() {
+        let worktrees: Vec<WorktreeInfo> = vec![];
+        let renameable = get_renameable_worktrees(&worktrees);
+        assert!(renameable.is_empty());
     }
 }

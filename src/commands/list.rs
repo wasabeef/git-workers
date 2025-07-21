@@ -133,28 +133,22 @@ pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterf
     Ok(())
 }
 
-#[cfg(false)] // Temporarily disabled due to WorktreeInfo struct field changes
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
     #[test]
-    #[ignore = "WorktreeInfo struct fields need to be updated"]
     fn test_format_worktree_display_basic() {
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
-            branch: Some("feature".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "feature".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         let display = format_worktree_display(&worktree, false);
@@ -166,17 +160,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "main".to_string(),
             path: PathBuf::from("/tmp/main"),
-            branch: Some("main".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "main".to_string(),
             is_current: true,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         let display = format_worktree_display(&worktree, false);
@@ -188,17 +177,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "locked".to_string(),
             path: PathBuf::from("/tmp/locked"),
-            branch: Some("locked".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: true,
-            lock_reason: Some("maintenance".to_string()),
+            branch: "locked".to_string(),
             is_current: false,
             has_changes: true,
             last_commit: None,
             ahead_behind: None,
+            is_locked: true,
         };
 
         let display = format_worktree_display(&worktree, false);
@@ -210,17 +194,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
-            branch: Some("feature".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "feature".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         let display = format_worktree_display(&worktree, true);
@@ -232,17 +211,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "feature-auth".to_string(),
             path: PathBuf::from("/tmp/feature"),
-            branch: Some("feature".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "feature".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         assert!(should_show_worktree(&worktree, false, Some("auth")));
@@ -253,17 +227,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "feature-ui".to_string(),
             path: PathBuf::from("/tmp/feature"),
-            branch: Some("feature".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "feature".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         assert!(!should_show_worktree(&worktree, false, Some("auth")));
@@ -274,17 +243,12 @@ mod tests {
         let worktree = WorktreeInfo {
             name: "clean".to_string(),
             path: PathBuf::from("/tmp/clean"),
-            branch: Some("clean".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "clean".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         assert!(should_show_worktree(&worktree, true, None));
@@ -295,36 +259,135 @@ mod tests {
         let clean_worktree = WorktreeInfo {
             name: "clean".to_string(),
             path: PathBuf::from("/tmp/clean"),
-            branch: Some("clean".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "clean".to_string(),
             is_current: false,
             has_changes: false,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         let dirty_worktree = WorktreeInfo {
             name: "dirty".to_string(),
             path: PathBuf::from("/tmp/dirty"),
-            branch: Some("dirty".to_string()),
-            commit_info: None,
-            head: "HEAD".to_string(),
-            is_bare: false,
-            is_detached: false,
-            is_locked: false,
-            lock_reason: None,
+            branch: "dirty".to_string(),
             is_current: false,
             has_changes: true,
             last_commit: None,
             ahead_behind: None,
+            is_locked: false,
         };
 
         assert!(!should_show_worktree(&clean_worktree, false, None));
         assert!(should_show_worktree(&dirty_worktree, false, None));
+    }
+
+    // Add 5 new tests for better coverage
+    #[test]
+    fn test_format_worktree_display_verbose_with_commit() {
+        let test_commit_id = "abc123def";
+        let test_path = "/tmp/feature";
+        let worktree = WorktreeInfo {
+            name: "feature".to_string(),
+            path: PathBuf::from(test_path),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: Some(crate::infrastructure::git::CommitInfo {
+                id: test_commit_id.to_string(),
+                message: "Add feature".to_string(),
+                author: "test@example.com".to_string(),
+                time: "2023-01-01".to_string(),
+            }),
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        let display = format_worktree_display(&worktree, true);
+        assert!(display.contains(&format!("[{test_commit_id}]")));
+        assert!(display.contains(&format!("- {test_path}")));
+    }
+
+    #[test]
+    fn test_format_worktree_display_verbose_with_ahead_behind() {
+        let ahead_count = 2;
+        let behind_count = 3;
+        let worktree = WorktreeInfo {
+            name: "feature".to_string(),
+            path: PathBuf::from("/tmp/feature"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: Some((ahead_count, behind_count)),
+            is_locked: false,
+        };
+
+        let display = format_worktree_display(&worktree, true);
+        assert!(display.contains(&format!("↑{ahead_count} ↓{behind_count}")));
+    }
+
+    #[test]
+    fn test_format_worktree_display_all_flags() {
+        let worktree_name = "complex";
+        let worktree = WorktreeInfo {
+            name: worktree_name.to_string(),
+            path: PathBuf::from("/tmp/complex"),
+            branch: "complex".to_string(),
+            is_current: true,
+            has_changes: true,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: true,
+        };
+
+        let display = format_worktree_display(&worktree, false);
+        assert_eq!(
+            display,
+            format!("{worktree_name} (current) (locked) (changes)")
+        );
+    }
+
+    #[test]
+    fn test_should_show_worktree_empty_filter() {
+        let worktree = WorktreeInfo {
+            name: "any".to_string(),
+            path: PathBuf::from("/tmp/any"),
+            branch: "any".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        // Empty string filter should match anything
+        assert!(should_show_worktree(&worktree, false, Some("")));
+    }
+
+    #[test]
+    fn test_should_show_worktree_partial_filter() {
+        let test_filters = vec!["auth", "feature", "login"];
+        let no_match_filter = "ui";
+        let worktree = WorktreeInfo {
+            name: "feature-auth-login".to_string(),
+            path: PathBuf::from("/tmp/feature"),
+            branch: "feature".to_string(),
+            is_current: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+            is_locked: false,
+        };
+
+        // Partial matches should work
+        for filter in test_filters {
+            assert!(should_show_worktree(&worktree, false, Some(filter)));
+        }
+        assert!(!should_show_worktree(
+            &worktree,
+            false,
+            Some(no_match_filter)
+        ));
     }
 }

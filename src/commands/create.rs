@@ -818,4 +818,89 @@ mod tests {
             validate_worktree_creation("new-worktree", &existing_path, &existing_worktrees);
         assert!(result.is_ok()); // Temporary assertion until struct is fixed
     }
+
+    // Add 6 new tests for better coverage
+    #[test]
+    fn test_determine_worktree_path_custom_missing_path() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let git_dir = temp_dir.path().join("project");
+        std::fs::create_dir_all(&git_dir).unwrap();
+
+        let result = determine_worktree_path(&git_dir, "test-worktree", "custom", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_determine_worktree_path_invalid_location() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let git_dir = temp_dir.path().join("project");
+        std::fs::create_dir_all(&git_dir).unwrap();
+
+        let invalid_location = "invalid-location";
+        let result = determine_worktree_path(&git_dir, "test-worktree", invalid_location, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_worktree_location_all_valid() {
+        let valid_locations = vec!["same-level", "subdirectory", "custom"];
+        for location in valid_locations {
+            assert!(validate_worktree_location(location).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_determine_worktree_path_legacy_custom_missing_path() {
+        let repo_name = "repo";
+        let result =
+            determine_worktree_path_legacy("test", WORKTREE_LOCATION_CUSTOM_PATH, None, repo_name);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_determine_worktree_path_subdirectory_repo_name() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let git_dir = temp_dir.path().join("my-project");
+        std::fs::create_dir_all(&git_dir).unwrap();
+
+        let result = determine_worktree_path(&git_dir, "feature", "subdirectory", None);
+        assert!(result.is_ok());
+
+        let (path, pattern) = result.unwrap();
+        assert_eq!(pattern, "subdirectory");
+        assert!(path.to_string_lossy().contains("my-project"));
+        assert!(path.to_string_lossy().contains("worktrees"));
+        assert!(path.to_string_lossy().contains("feature"));
+    }
+
+    #[test]
+    fn test_branch_source_enum_variants() {
+        let test_branch = "main";
+        let test_tag = "v1.0.0";
+        let test_new_branch = "feature";
+        let test_base = "develop";
+
+        let sources = vec![
+            BranchSource::Head,
+            BranchSource::Branch(test_branch.to_string()),
+            BranchSource::Tag(test_tag.to_string()),
+            BranchSource::NewBranch {
+                name: test_new_branch.to_string(),
+                base: test_base.to_string(),
+            },
+        ];
+
+        // Test that all enum variants can be created and matched
+        for source in sources {
+            match source {
+                BranchSource::Head => {}
+                BranchSource::Branch(ref branch) => assert_eq!(branch, test_branch),
+                BranchSource::Tag(ref tag) => assert_eq!(tag, test_tag),
+                BranchSource::NewBranch { ref name, ref base } => {
+                    assert_eq!(name, test_new_branch);
+                    assert_eq!(base, test_base);
+                }
+            }
+        }
+    }
 }
