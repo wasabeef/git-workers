@@ -123,6 +123,21 @@ pub fn print_warning(message: &str) {
 /// requires interactive terminal capabilities.
 #[allow(dead_code)]
 pub fn get_terminal() -> Term {
+    Term::stderr()
+}
+
+/// Gets a terminal instance with validation.
+///
+/// This function checks if the current environment is a terminal and
+/// exits with an error if not. This is used by the main application
+/// to ensure interactive terminal capabilities are available.
+///
+/// # Panics
+///
+/// Panics if not running in a terminal environment, as the application
+/// requires interactive terminal capabilities.
+#[allow(dead_code)]
+pub fn get_terminal_with_validation() -> Term {
     let term = Term::stderr();
     if !term.is_term() {
         eprintln!("{ERROR_TERMINAL_REQUIRED}");

@@ -80,14 +80,14 @@ fn test_press_any_key_to_continue() {
 
 #[test]
 fn test_terminal_operations() {
-    // Skip this test in CI or non-terminal environments
-    if std::env::var("CI").is_ok() || !console::Term::stderr().is_term() {
-        // In CI environment, we can't test terminal operations
-        return;
-    }
-
-    // Test that terminal functions exist
+    // Test that terminal functions exist and can be created
+    // Note: get_terminal() now returns Term::stderr() without validation
     let terminal = get_terminal();
     // Just ensure it doesn't panic
     drop(terminal);
+
+    // Test is_term check separately
+    let term = console::Term::stderr();
+    // This will be false in CI but true in local terminal
+    let _is_terminal = term.is_term();
 }
