@@ -13,7 +13,9 @@ mod unit {
 #[cfg(test)]
 mod integration {
     mod git_flow;
+    mod list_ui_display_test;
     mod multi_repo;
+    mod repository_info_display_test;
     mod worktree_lifecycle;
 }
 
