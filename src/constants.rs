@@ -615,6 +615,18 @@ pub const BOOL_FALSE_STR: &str = "false";
 pub const EXIT_MSG_GOODBYE: &str = "Goodbye!";
 pub const EXIT_MSG_CANCELLED: &str = "Cancelled.";
 
+// List UI display constants
+pub const ICON_CURRENT_WORKTREE: &str = "→";
+pub const ICON_OTHER_WORKTREE: &str = "▸";
+pub const MODIFIED_STATUS_YES: &str = "Yes";
+pub const MODIFIED_STATUS_NO: &str = "No";
+pub const TABLE_HEADER_NAME: &str = "Name";
+pub const TABLE_HEADER_BRANCH: &str = "Branch";
+pub const TABLE_HEADER_MODIFIED: &str = "Modified";
+pub const TABLE_HEADER_PATH: &str = "Path";
+pub const TABLE_SEPARATOR: &str = "-";
+pub const CURRENT_MARKER: &str = "[current]";
+
 // Prompt suffixes
 pub const PROMPT_SUFFIX_COLON: &str = ": ";
 pub const PROMPT_SUFFIX_QUESTION: &str = "? ";
