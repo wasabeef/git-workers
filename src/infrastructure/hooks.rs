@@ -32,8 +32,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config::Config;
-use crate::constants::*;
+use super::super::config::Config;
+use super::super::constants::*;
 
 /// Context information passed to hook commands
 ///
@@ -181,4 +181,80 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_hook_context_creation() {
+        let context = HookContext {
+            worktree_name: "test-worktree".to_string(),
+            worktree_path: PathBuf::from("/test/path"),
+        };
+
+        assert_eq!(context.worktree_name, "test-worktree");
+        assert_eq!(context.worktree_path, PathBuf::from("/test/path"));
+    }
+
+    #[test]
+    fn test_template_variable_replacement() {
+        // Test the template variable replacement logic used in execute_hooks
+        let worktree_name = "feature-branch";
+        let worktree_path = "/home/user/project/feature";
+
+        let cmd = "echo 'Working on {{worktree_name}} at {{worktree_path}}'";
+        let expanded = cmd
+            .replace(TEMPLATE_WORKTREE_NAME, worktree_name)
+            .replace(TEMPLATE_WORKTREE_PATH, worktree_path);
+
+        assert_eq!(
+            expanded,
+            "echo 'Working on feature-branch at /home/user/project/feature'"
+        );
+    }
+
+    #[test]
+    fn test_hook_context_with_pathbuf_display() {
+        let temp_dir = TempDir::new().unwrap();
+        let context = HookContext {
+            worktree_name: "test".to_string(),
+            worktree_path: temp_dir.path().to_path_buf(),
+        };
+
+        // Test that PathBuf can be displayed as string
+        let path_str = context.worktree_path.display().to_string();
+        assert!(!path_str.is_empty(), "Path string should not be empty");
+        assert!(
+            path_str.starts_with('/') || path_str.contains(':'),
+            "Should be an absolute path"
+        );
+    }
+
+    #[test]
+    fn test_multiple_template_replacements() {
+        // Test multiple occurrences of same template variable
+        let cmd = "cd {{worktree_path}} && echo {{worktree_name}} && ls {{worktree_path}}";
+        let expanded = cmd
+            .replace(TEMPLATE_WORKTREE_NAME, "main")
+            .replace(TEMPLATE_WORKTREE_PATH, "/project/main");
+
+        assert_eq!(
+            expanded,
+            "cd /project/main && echo main && ls /project/main"
+        );
+    }
+
+    #[test]
+    fn test_no_template_variables() {
+        // Test command with no template variables
+        let cmd = "npm install";
+        let expanded = cmd
+            .replace(TEMPLATE_WORKTREE_NAME, "test")
+            .replace(TEMPLATE_WORKTREE_PATH, "/test/path");
+
+        assert_eq!(expanded, "npm install");
+    }
 }

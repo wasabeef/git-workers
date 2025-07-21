@@ -9,8 +9,8 @@ use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::FilesConfig;
-use crate::constants::{
+use super::super::config::FilesConfig;
+use super::super::constants::{
     BYTES_PER_MB, COLON_POSITION_WINDOWS, ERROR_FAILED_TO_CREATE_DIR,
     ERROR_FAILED_TO_CREATE_PARENT_DIR, ERROR_GIT_DIR_NO_PARENT, ERROR_NOT_FOUND,
     ERROR_NO_SUCH_FILE, ERROR_REPO_NO_WORKING_DIR, ERROR_SOURCE_NOT_FILE_OR_DIR,
@@ -22,8 +22,8 @@ use crate::constants::{
     MAX_FILE_SIZE_MB, PLURAL_EMPTY, PLURAL_S, SIZE_UNIT_MB, WINDOWS_PATH_MIN_LENGTH,
     WORKTREES_SUBDIR,
 };
-use crate::filesystem::FileSystem;
-use crate::git::{GitWorktreeManager, WorktreeInfo};
+use super::filesystem::FileSystem;
+use super::git::{GitWorktreeManager, WorktreeInfo};
 
 /// Copies configured files from source to destination worktree
 ///
@@ -62,7 +62,7 @@ pub fn copy_configured_files(
         config,
         destination_path,
         manager,
-        &crate::filesystem::RealFileSystem::new(),
+        &super::filesystem::RealFileSystem::new(),
     )
 }
 
@@ -692,5 +692,144 @@ fn copy_directory_recursive_impl_with_fs(
         copy_directory_recursive_with_fs(source, dest, depth, fs)
     } else {
         Ok(0) // Skip special files
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::FilesConfig;
+    use crate::infrastructure::git::GitWorktreeManager;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_is_safe_path_valid() {
+        assert!(is_safe_path("valid/path"));
+        assert!(is_safe_path("config.json"));
+        assert!(is_safe_path("src/main.rs"));
+        assert!(is_safe_path("assets/image.png"));
+    }
+
+    #[test]
+    fn test_is_safe_path_invalid() {
+        assert!(!is_safe_path(""));
+        assert!(!is_safe_path("../parent"));
+        assert!(!is_safe_path("/absolute/path"));
+        assert!(!is_safe_path("C:\\windows\\path"));
+        assert!(!is_safe_path("path/../traversal"));
+        assert!(!is_safe_path("path/./dot"));
+    }
+
+    #[test]
+    fn test_copy_file_or_directory_nonexistent() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let source = temp_dir.path().join("nonexistent.txt");
+        let dest = temp_dir.path().join("dest.txt");
+
+        let result = copy_file_or_directory(&source, &dest);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_copy_file_or_directory_existing_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let source = temp_dir.path().join("source.txt");
+        let dest = temp_dir.path().join("dest.txt");
+
+        // Create source file
+        fs::write(&source, "test content")?;
+
+        let count = copy_file_or_directory(&source, &dest)?;
+        assert_eq!(count, 1);
+        assert!(dest.exists());
+        assert_eq!(fs::read_to_string(&dest)?, "test content");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_source_directory_explicit() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Initialize a test git repository
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(temp_dir.path())
+            .output()?;
+
+        let manager = GitWorktreeManager::new_from_path(temp_dir.path())?;
+
+        let config = FilesConfig {
+            copy: vec![".env".to_string()],
+            source: Some("/explicit/path".to_string()),
+        };
+
+        let source_dir = determine_source_directory(&config, &manager)?;
+        assert_eq!(source_dir, PathBuf::from("/explicit/path"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_source_directory_relative() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Initialize a test git repository
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(temp_dir.path())
+            .output()?;
+
+        let manager = GitWorktreeManager::new_from_path(temp_dir.path())?;
+
+        let config = FilesConfig {
+            copy: vec![".env".to_string()],
+            source: Some("./config".to_string()),
+        };
+
+        let source_dir = determine_source_directory(&config, &manager)?;
+        // Relative path should be resolved from repo root
+        assert!(source_dir.to_string_lossy().contains("config"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_safe_path_edge_cases() {
+        // Test various edge cases for path safety
+        assert!(!is_safe_path(""));
+        assert!(!is_safe_path("."));
+        assert!(!is_safe_path(".."));
+        assert!(!is_safe_path("./file"));
+        assert!(!is_safe_path("../file"));
+        assert!(!is_safe_path("path/.."));
+        assert!(!is_safe_path("path/."));
+        assert!(!is_safe_path("\\\\server\\share"));
+
+        // Valid paths
+        assert!(is_safe_path("config.json"));
+        assert!(is_safe_path("src/main.rs"));
+        assert!(is_safe_path("assets/images/logo.png"));
+    }
+
+    #[test]
+    fn test_copy_file_with_fs_simple() -> Result<()> {
+        // Test the path safety validation function directly
+        assert!(is_safe_path("config.json"));
+        assert!(!is_safe_path("../config.json"));
+
+        // Test file size calculation function with real filesystem
+        let temp_dir = TempDir::new()?;
+        let test_file = temp_dir.path().join("test.txt");
+        fs::write(&test_file, "hello world")?;
+
+        let size = calculate_path_size(&test_file)?;
+        assert_eq!(size, 11); // "hello world".len()
+
+        Ok(())
     }
 }

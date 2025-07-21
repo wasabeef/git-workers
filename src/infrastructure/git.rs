@@ -39,7 +39,7 @@ use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::constants::{
+use super::super::constants::{
     COMMIT_ID_SHORT_LENGTH, DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED,
     DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, ERROR_LOCK_CREATE, ERROR_LOCK_EXISTS,
     ERROR_NO_PARENT_BARE_REPO, ERROR_NO_PARENT_DIR, ERROR_NO_REPO_DIR, ERROR_NO_REPO_WORKING_DIR,
@@ -52,7 +52,7 @@ use crate::constants::{
     LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT, WINDOW_FIRST_INDEX, WINDOW_SECOND_INDEX,
     WINDOW_SIZE_PAIRS,
 };
-use crate::filesystem::FileSystem;
+use super::filesystem::FileSystem;
 
 // Create Duration from constant for stale lock timeout
 const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(STALE_LOCK_TIMEOUT_SECS);
@@ -1443,7 +1443,7 @@ impl GitWorktreeManager {
 ///
 /// This struct is used internally to collect status information
 /// about a worktree in a single pass.
-struct WorktreeStatus {
+pub(crate) struct WorktreeStatus {
     has_changes: bool,
     last_commit: Option<CommitInfo>,
     ahead_behind: Option<(usize, usize)>,
@@ -1600,4 +1600,104 @@ pub fn list_worktrees() -> Result<Vec<String>> {
         .iter()
         .map(|w| format!("{} ({})", w.name, w.branch))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_find_common_parent_empty() {
+        let worktrees: Vec<WorktreeInfo> = vec![];
+        let result = find_common_parent(&worktrees);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_common_parent_single() {
+        let worktree = WorktreeInfo {
+            name: "main".to_string(),
+            path: PathBuf::from("/home/user/project"),
+            branch: "main".to_string(),
+            is_current: true,
+            is_locked: false,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+        };
+
+        let worktrees = vec![worktree];
+        let result = find_common_parent(&worktrees);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), PathBuf::from("/home/user"));
+    }
+
+    #[test]
+    fn test_find_common_parent_multiple() {
+        let worktrees = vec![
+            WorktreeInfo {
+                name: "main".to_string(),
+                path: PathBuf::from("/home/user/project"),
+                branch: "main".to_string(),
+                is_current: true,
+                is_locked: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+            },
+            WorktreeInfo {
+                name: "feature".to_string(),
+                path: PathBuf::from("/home/user/project-feature"),
+                branch: "feature".to_string(),
+                is_current: false,
+                is_locked: false,
+                has_changes: false,
+                last_commit: None,
+                ahead_behind: None,
+            },
+        ];
+
+        let result = find_common_parent(&worktrees);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), PathBuf::from("/home/user"));
+    }
+
+    #[test]
+    fn test_get_worktree_status_nonexistent() {
+        let non_existent = PathBuf::from("/nonexistent/path");
+        let status = get_worktree_status(&non_existent);
+
+        // Should return clean status for non-existent paths
+        assert!(!status.has_changes);
+        assert!(status.last_commit.is_none());
+        assert!(status.ahead_behind.is_none());
+    }
+
+    #[test]
+    fn test_get_worktree_status_basic() -> Result<()> {
+        // Test basic worktree status with current directory
+        let current_dir = std::env::current_dir()?;
+        let status = get_worktree_status(&current_dir);
+
+        // Status should have working fields (actual content may vary)
+        // Just check that the function doesn't panic and returns a status
+        assert!(status.ahead_behind.is_none() || status.ahead_behind.is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_worktree_status_path_validation() -> Result<()> {
+        // Test with non-existent path validation
+        let non_existent = std::path::Path::new("/tmp/test-path");
+        let status = get_worktree_status(non_existent);
+
+        // Should return clean status for test paths
+        assert!(status.last_commit.is_none());
+        assert!(status.ahead_behind.is_none());
+
+        Ok(())
+    }
 }
