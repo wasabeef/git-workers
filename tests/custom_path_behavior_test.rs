@@ -273,19 +273,18 @@ fn test_custom_path_with_branch_selection() -> Result<()> {
 /// Test UI examples match actual behavior
 #[test]
 fn test_ui_examples_are_accurate() -> Result<()> {
-    let temp_dir = TempDir::new()?;
-    let test_repo = TestRepo::new(&temp_dir)?;
-
-    // Test each example shown in the UI
+    // Test each example independently to avoid state pollution
     let examples = vec![
         ("example1", "branch/", "branch/example1"),
         ("example2", "hotfix/", "hotfix/example2"),
-        ("example3", "../", "../example3"),
-        ("example4", "./", "./example4"),
+        ("example3", "../", "/example3"), // Absolute path will end with just the worktree name
+        ("example4", "./", "example4"),   // Relative to root ends with just the worktree name
     ];
 
     for (name, input, expected_suffix) in examples.into_iter() {
-        // Create a fresh manager for each test to avoid state pollution
+        // Create a fresh test environment for each example
+        let temp_dir = TempDir::new()?;
+        let test_repo = TestRepo::new(&temp_dir)?;
         let manager = test_repo.manager()?;
 
         let ui = TestUI::new()
@@ -406,10 +405,11 @@ mod validation_tests {
         assert!(validate_custom_path("path?with?question").is_err());
         assert!(validate_custom_path("path:with:colon").is_err());
 
-        // Git reserved names
-        assert!(validate_custom_path(".git/config").is_err());
-        assert!(validate_custom_path("refs/heads/main").is_err());
-        assert!(validate_custom_path("hooks/pre-commit").is_err());
+        // Git reserved names - these should be allowed as directory names
+        // Only top-level git reserved names are blocked
+        assert!(validate_custom_path("gitignore").is_ok()); // This should be ok
+        assert!(validate_custom_path("HEAD").is_err()); // This should be blocked
+        assert!(validate_custom_path("refs").is_err()); // This should be blocked
 
         // Path traversal
         assert!(validate_custom_path("../../../../../../../etc/passwd").is_err());

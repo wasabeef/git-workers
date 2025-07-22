@@ -35,6 +35,10 @@ cargo test -- --test-threads=1
 
 # Run tests with output for debugging
 cargo test test_name -- --nocapture
+
+# Run with logging enabled
+RUST_LOG=debug cargo run
+RUST_LOG=git_workers=trace cargo run
 ```
 
 ### Quality Checks
@@ -52,6 +56,12 @@ cargo check --all-features
 
 # Generate documentation
 cargo doc --no-deps --open
+
+# Run all checks (using bun if available)
+bun run check
+
+# Coverage report (requires cargo-llvm-cov)
+cargo llvm-cov --html --lib --ignore-filename-regex '(tests/|src/main\.rs|src/bin/)' --open
 ```
 
 ### Installation
@@ -112,17 +122,26 @@ source /path/to/git-workers/shell/gw.sh
 ```
 src/
 ├── main.rs              # CLI entry point and main menu loop
-├── lib.rs               # Library exports
+├── lib.rs               # Library exports and module re-exports
 ├── commands.rs          # Command implementations for menu items
-├── git.rs               # Git worktree operations (git2 + process::Command)
 ├── menu.rs              # MenuItem enum and icon definitions
 ├── config.rs            # .git-workers.toml configuration management
-├── hooks.rs             # Hook system (post-create, pre-remove, etc.)
 ├── repository_info.rs   # Repository information display
 ├── input_esc_raw.rs     # Custom input handling with ESC support
 ├── constants.rs         # Centralized constants (strings, formatting)
-├── file_copy.rs         # File copy functionality for gitignored files
-└── utils.rs             # Common utilities (error display, etc.)
+├── utils.rs             # Common utilities (error display, etc.)
+├── ui.rs                # User interface abstraction layer
+├── git_interface.rs     # Git operations trait abstraction
+├── core/                # Core business logic (UI/infra independent)
+│   ├── mod.rs           # Module exports
+│   ├── models.rs        # Core data models (Worktree, Branch, etc.)
+│   └── validation.rs    # Validation logic for names and paths
+└── infrastructure/      # Infrastructure implementations
+    ├── mod.rs           # Module exports
+    ├── git.rs           # Git worktree operations (git2 + process::Command)
+    ├── hooks.rs         # Hook system (post-create, pre-remove, etc.)
+    ├── file_copy.rs     # File copy functionality for gitignored files
+    └── filesystem.rs    # Filesystem operations and utilities
 ```
 
 ### Technology Stack
@@ -193,15 +212,18 @@ Since Git lacks native rename functionality:
 
 ### Testing Considerations
 
-- Integration tests in `tests/` directory (30 test files)
+- Integration tests in `tests/` directory (17 test files after consolidation)
 - Some tests are flaky in parallel execution (marked with `#[ignore]`)
 - CI sets `CI=true` environment variable to skip flaky tests
 - Run with `--test-threads=1` for reliable results
 - Use `--nocapture` to see test output for debugging
-- New test files added:
-  - `worktree_path_test.rs`: Tests for path resolution and edge cases
-  - `create_worktree_integration_test.rs`: Integration tests for worktree creation
-  - `create_worktree_from_tag_test.rs`: Tests for tag listing and worktree creation from tags
+
+### Common Error Patterns and Solutions
+
+1. **"Permission denied" when running tests**: Tests create temporary directories; ensure proper permissions
+2. **"Repository not found" errors**: Tests require git to be configured (`git config --global user.name/email`)
+3. **Flaky test failures**: Use `--test-threads=1` to avoid race conditions in worktree operations
+4. **"Lock file exists" errors**: Clean up `.git/git-workers-worktree.lock` if tests are interrupted
 
 ### String Formatting
 
@@ -411,3 +433,40 @@ The following test files were consolidated into unified versions:
 - Individual component tests → `unified_*_comprehensive_test.rs`
 - Duplicate functionality tests → Removed
 - Japanese comments → Translated to English
+
+## Key Implementation Patterns
+
+### Git Operations
+
+The codebase uses two approaches for Git operations:
+
+1. **git2 library**: For read operations (listing branches, getting commit info)
+2. **std::process::Command**: For write operations (worktree add/remove) to ensure compatibility
+
+Example pattern:
+
+```rust
+// Read operation using git2
+let repo = Repository::open(".")?;
+let branches = repo.branches(Some(BranchType::Local))?;
+
+// Write operation using Command
+Command::new("git")
+    .args(&["worktree", "add", path, branch])
+    .output()?;
+```
+
+### Error Handling Philosophy
+
+- Use `anyhow::Result` for application-level errors
+- Provide context with `.context()` for better error messages
+- Show user-friendly messages via `utils::display_error()`
+- Never panic in production code; handle all error cases gracefully
+
+### UI Abstraction
+
+The `ui::UserInterface` trait enables testing of interactive features:
+
+- Mock implementations for tests
+- Real implementation wraps dialoguer
+- All user interactions go through this abstraction
