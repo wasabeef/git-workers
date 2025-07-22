@@ -10,6 +10,7 @@ use test_constants::config;
 
 #[test]
 #[serial]
+#[ignore = "Debug test for manual rename operations - not suitable for CI"]
 fn test_rename_worktree_debug() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path();

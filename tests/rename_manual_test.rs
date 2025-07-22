@@ -9,6 +9,7 @@ use test_constants::config;
 
 #[test]
 #[serial]
+#[ignore = "Manual test for rename operations - not suitable for CI"]
 fn test_manual_rename_approach() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path();

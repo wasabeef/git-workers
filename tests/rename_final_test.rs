@@ -57,11 +57,18 @@ fn test_rename_worktree_branch_preservation() -> Result<()> {
 
 fn test_rename_in_repo(
     manager: &GitWorktreeManager,
-    worktree_name: &str,
-    branch_name: &str,
+    base_worktree_name: &str,
+    base_branch_name: &str,
 ) -> Result<()> {
+    // Generate unique names
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let worktree_name = format!("{base_worktree_name}-{timestamp}");
+    let branch_name = format!("{base_branch_name}-{timestamp}");
+
     // Create worktree
-    manager.create_worktree_with_new_branch(worktree_name, branch_name, config::MAIN_BRANCH)?;
+    manager.create_worktree_with_new_branch(&worktree_name, &branch_name, config::MAIN_BRANCH)?;
 
     // Verify initial state
     let worktrees = manager.list_worktrees()?;
@@ -78,32 +85,36 @@ fn test_rename_in_repo(
 
     // Rename worktree
     let new_name = format!("{worktree_name}-renamed");
-    let result = manager.rename_worktree(worktree_name, &new_name);
+    let result = manager.rename_worktree(&worktree_name, &new_name);
 
     match result {
         Ok(new_path) => {
             println!("\nRename succeeded, new path: {new_path:?}");
 
-            // Check state after rename
+            // Check state after rename - now look for new display name
             let worktrees_after = manager.list_worktrees()?;
             let wt_after = worktrees_after
                 .iter()
-                .find(|w| w.name == worktree_name)
-                .expect("Worktree should still exist");
+                .find(|w| w.name == new_name)
+                .expect("Worktree should exist with new name");
 
             println!("\nAfter rename:");
             println!("  Name: {}", wt_after.name);
             println!("  Branch: {}", wt_after.branch);
             println!("  Path: {:?}", wt_after.path);
 
-            // Current behavior: branch becomes "unknown" because path is not updated
-            // Expected behavior: branch should remain the same
-            if wt_after.branch == "unknown" {
-                println!("  ⚠️  Branch became 'unknown' - this is the bug!");
+            // With our fix, branch information should be preserved
+            if wt_after.branch == branch_name {
+                println!("  ✓ Branch preserved correctly!");
+            } else if wt_after.branch == "unknown" {
+                println!("  ⚠️  Branch became 'unknown' - unexpected!");
                 println!("  Expected: Branch should be '{branch_name}'");
             } else {
-                println!("  ✓ Branch preserved correctly!");
+                println!("  ? Branch changed to: {}", wt_after.branch);
             }
+
+            // Verify display name changed
+            assert_eq!(wt_after.name, new_name);
         }
         Err(e) => {
             println!("\nRename failed: {e}");
@@ -162,11 +173,16 @@ fn test_rename_worktree_in_bare_repo() -> Result<()> {
     let manager = GitWorktreeManager::new_from_path(&bare_repo_path)?;
 
     println!("=== Test Case: Bare repository ===");
-    let worktree_name = "bare-test";
-    let branch_name = "bare-branch";
+
+    // Generate unique names for bare repo test
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let worktree_name = format!("bare-test-{timestamp}");
+    let branch_name = format!("bare-branch-{timestamp}");
 
     // Create worktree (will be created outside the bare repo)
-    manager.create_worktree_with_new_branch(worktree_name, branch_name, config::MAIN_BRANCH)?;
+    manager.create_worktree_with_new_branch(&worktree_name, &branch_name, config::MAIN_BRANCH)?;
 
     // Verify and rename
     let worktrees = manager.list_worktrees()?;
@@ -180,22 +196,27 @@ fn test_rename_worktree_in_bare_repo() -> Result<()> {
     println!("  Branch: {}", wt.branch);
 
     // Rename
-    let new_name = "bare-renamed";
-    match manager.rename_worktree(worktree_name, new_name) {
+    let new_name = format!("bare-renamed-{timestamp}");
+    match manager.rename_worktree(&worktree_name, &new_name) {
         Ok(_) => {
             let worktrees_after = manager.list_worktrees()?;
             let wt_after = worktrees_after
                 .iter()
-                .find(|w| w.name == worktree_name)
-                .expect("Worktree should exist");
+                .find(|w| w.name == new_name) // Look for new display name
+                .expect("Worktree should exist with new name");
 
             println!("\nAfter rename:");
             println!("  Name: {}", wt_after.name);
             println!("  Branch: {}", wt_after.branch);
 
-            if wt_after.branch == "unknown" {
+            if wt_after.branch == branch_name {
+                println!("  ✓ Branch preserved correctly in bare repo!");
+            } else if wt_after.branch == "unknown" {
                 println!("  ⚠️  Branch became 'unknown' in bare repo too!");
             }
+
+            // Verify display name changed
+            assert_eq!(wt_after.name, new_name);
         }
         Err(e) => println!("Rename failed: {e}"),
     }

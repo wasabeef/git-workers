@@ -75,18 +75,18 @@ fn test_rename_worktree_preserves_branch_fixed() -> Result<()> {
 
     println!("\nAfter rename:");
     for wt in &worktrees_after {
-        if wt.name == worktree_name || wt.path.ends_with(&new_name) {
+        if wt.name == new_name || wt.path.ends_with(&new_name) {
             println!("  Name: {}", wt.name);
             println!("  Branch: {}", wt.branch);
             println!("  Path: {:?}", wt.path);
         }
     }
 
-    // Find the worktree (it should still be tracked by original name)
+    // Find the worktree (it should now be tracked by new display name)
     let wt_after = worktrees_after
         .iter()
-        .find(|w| w.name == worktree_name)
-        .expect("Worktree should still be tracked by original name");
+        .find(|w| w.name == new_name)
+        .expect("Worktree should be tracked by new display name");
 
     // Key assertions
     assert_eq!(

@@ -489,9 +489,9 @@ fn test_rename_worktree() -> Result<()> {
 
     // The worktree should still be accessible via git
     let worktrees = manager.list_worktrees()?;
-    // Git tracks worktrees by their original name, so the old name should still be there
-    // but the path should have changed
-    assert!(worktrees.iter().any(|w| w.name == old_name));
+    // After renaming, the display name should change to the new name
+    // but Git still tracks it by the original metadata name
+    assert!(worktrees.iter().any(|w| w.name == new_name));
 
     Ok(())
 }

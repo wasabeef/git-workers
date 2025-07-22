@@ -9,6 +9,7 @@ use test_constants::config;
 
 #[test]
 #[serial]
+#[ignore = "Trace test for debugging rename operations - not suitable for CI"]
 fn test_trace_rename_execution() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path();

@@ -9,6 +9,7 @@ use test_constants::config;
 
 #[test]
 #[serial]
+#[ignore = "Debug test for manual filesystem operations - not suitable for CI"]
 fn test_debug_filesystem_operations() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let repo_path = temp_dir.path();

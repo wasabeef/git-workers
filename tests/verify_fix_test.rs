@@ -46,10 +46,13 @@ fn test_verify_rename_fix() -> Result<()> {
 
     let manager = GitWorktreeManager::new_from_path(repo_path)?;
 
-    // Create a worktree
-    let worktree_name = "verify-test";
-    let branch_name = "verify-branch";
-    manager.create_worktree_with_new_branch(worktree_name, branch_name, config::MAIN_BRANCH)?;
+    // Create a worktree with unique names
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let worktree_name = format!("verify-test-{timestamp}");
+    let branch_name = format!("verify-branch-{timestamp}");
+    manager.create_worktree_with_new_branch(&worktree_name, &branch_name, config::MAIN_BRANCH)?;
 
     println!("=== Verification of rename fix ===");
 
@@ -62,9 +65,9 @@ fn test_verify_rename_fix() -> Result<()> {
     println!("{}", String::from_utf8_lossy(&output.stdout));
 
     // Rename
-    let new_name = "verify-renamed";
+    let new_name = format!("verify-renamed-{timestamp}");
     println!("\n2. Performing rename...");
-    let new_path = manager.rename_worktree(worktree_name, new_name)?;
+    let new_path = manager.rename_worktree(&worktree_name, &new_name)?;
     println!("   New path: {new_path:?}");
 
     // Check git worktree list after
@@ -77,7 +80,7 @@ fn test_verify_rename_fix() -> Result<()> {
     println!("{git_output}");
 
     // Verify git shows the new path
-    if git_output.contains(new_name) {
+    if git_output.contains(&new_name) {
         println!("   ✓ Git shows the renamed path");
     } else {
         println!("   ✗ Git still shows old path");
@@ -111,7 +114,7 @@ fn test_verify_rename_fix() -> Result<()> {
     println!("\n6. Testing with GitWorktreeManager::list_worktrees():");
     let worktrees = manager.list_worktrees()?;
     for wt in &worktrees {
-        if wt.name == worktree_name {
+        if wt.name == new_name {
             println!("   Name: {}", wt.name);
             println!("   Branch: {}", wt.branch);
             println!("   Path: {:?}", wt.path);
@@ -122,7 +125,7 @@ fn test_verify_rename_fix() -> Result<()> {
                 println!("   ✓ Branch is correct - fix is working!");
             }
 
-            if wt.path.ends_with(new_name) {
+            if wt.path.ends_with(&new_name) {
                 println!("   ✓ Path is updated");
             } else {
                 println!("   ✗ Path is not updated");
