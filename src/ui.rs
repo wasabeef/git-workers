@@ -4,10 +4,40 @@
 //! allowing for testable code by separating business logic from UI dependencies.
 
 use anyhow::Result;
-use dialoguer::{Confirm, FuzzySelect, Input, MultiSelect, Select};
+use dialoguer::{Confirm, FuzzySelect, MultiSelect, Select};
 use std::collections::VecDeque;
 
+use crate::input_esc_raw::{input_esc_raw, input_esc_with_default_raw};
 use crate::utils::get_theme;
+
+// Error messages
+const ERROR_USER_CANCELLED_SELECTION: &str = "User cancelled selection";
+const ERROR_USER_CANCELLED_FUZZY_SELECTION: &str = "User cancelled fuzzy selection";
+const ERROR_USER_CANCELLED_INPUT: &str = "User cancelled input";
+const ERROR_USER_CANCELLED_CONFIRMATION: &str = "User cancelled confirmation";
+const ERROR_USER_CANCELLED_MULTISELECTION: &str = "User cancelled multiselection";
+const ERROR_NO_MORE_SELECTIONS: &str = "No more selections configured for MockUI";
+const ERROR_NO_MORE_INPUTS: &str = "No more inputs configured for MockUI";
+const ERROR_NO_MORE_CONFIRMATIONS: &str = "No more confirmations configured for MockUI";
+const ERROR_NO_MORE_MULTISELECTS: &str = "No more multiselects configured for MockUI";
+
+// Test constants
+#[cfg(test)]
+const TEST_PROMPT: &str = "test";
+#[cfg(test)]
+const TEST_OPTION_A: &str = "a";
+#[cfg(test)]
+const TEST_OPTION_B: &str = "b";
+#[cfg(test)]
+const TEST_INPUT_BRANCH: &str = "test-branch";
+#[cfg(test)]
+const TEST_INPUT_FEATURE: &str = "feature-branch";
+#[cfg(test)]
+const TEST_INPUT_CUSTOM: &str = "custom-input";
+#[cfg(test)]
+const TEST_INPUT_DEFAULT: &str = "default";
+#[cfg(test)]
+const TEST_INPUT_FALLBACK: &str = "fallback";
 
 /// Trait for user interface interactions
 ///
@@ -51,7 +81,7 @@ impl UserInterface for DialoguerUI {
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
-        selection.ok_or_else(|| anyhow::anyhow!("User cancelled selection"))
+        selection.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_SELECTION))
     }
 
     fn select_with_default(&self, prompt: &str, items: &[String], default: usize) -> Result<usize> {
@@ -60,7 +90,7 @@ impl UserInterface for DialoguerUI {
             .items(items)
             .default(default)
             .interact_opt()?;
-        selection.ok_or_else(|| anyhow::anyhow!("User cancelled selection"))
+        selection.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_SELECTION))
     }
 
     fn fuzzy_select(&self, prompt: &str, items: &[String]) -> Result<usize> {
@@ -68,29 +98,23 @@ impl UserInterface for DialoguerUI {
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
-        selection.ok_or_else(|| anyhow::anyhow!("User cancelled fuzzy selection"))
+        selection.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_FUZZY_SELECTION))
     }
 
     fn input(&self, prompt: &str) -> Result<String> {
-        let input = Input::<String>::with_theme(&get_theme())
-            .with_prompt(prompt)
-            .interact_text()?;
-        Ok(input)
+        input_esc_raw(prompt).ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_INPUT))
     }
 
     fn input_with_default(&self, prompt: &str, default: &str) -> Result<String> {
-        let input = Input::<String>::with_theme(&get_theme())
-            .with_prompt(prompt)
-            .default(default.to_string())
-            .interact_text()?;
-        Ok(input)
+        input_esc_with_default_raw(prompt, default)
+            .ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_INPUT))
     }
 
     fn confirm(&self, prompt: &str) -> Result<bool> {
         let confirmed = Confirm::with_theme(&get_theme())
             .with_prompt(prompt)
             .interact_opt()?;
-        confirmed.ok_or_else(|| anyhow::anyhow!("User cancelled confirmation"))
+        confirmed.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_CONFIRMATION))
     }
 
     fn confirm_with_default(&self, prompt: &str, default: bool) -> Result<bool> {
@@ -98,7 +122,7 @@ impl UserInterface for DialoguerUI {
             .with_prompt(prompt)
             .default(default)
             .interact_opt()?;
-        confirmed.ok_or_else(|| anyhow::anyhow!("User cancelled confirmation"))
+        confirmed.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_CONFIRMATION))
     }
 
     fn multiselect(&self, prompt: &str, items: &[String]) -> Result<Vec<usize>> {
@@ -106,7 +130,7 @@ impl UserInterface for DialoguerUI {
             .with_prompt(prompt)
             .items(items)
             .interact_opt()?;
-        selections.ok_or_else(|| anyhow::anyhow!("User cancelled multiselection"))
+        selections.ok_or_else(|| anyhow::anyhow!(ERROR_USER_CANCELLED_MULTISELECTION))
     }
 }
 
@@ -181,7 +205,7 @@ impl UserInterface for MockUI {
         self.selections
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more selections configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_SELECTIONS))
     }
 
     fn select_with_default(
@@ -194,7 +218,7 @@ impl UserInterface for MockUI {
         self.selections
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more selections configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_SELECTIONS))
     }
 
     fn fuzzy_select(&self, _prompt: &str, _items: &[String]) -> Result<usize> {
@@ -202,14 +226,14 @@ impl UserInterface for MockUI {
         self.selections
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more selections configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_SELECTIONS))
     }
 
     fn input(&self, _prompt: &str) -> Result<String> {
         self.inputs
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more inputs configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_INPUTS))
     }
 
     fn input_with_default(&self, _prompt: &str, default: &str) -> Result<String> {
@@ -225,7 +249,7 @@ impl UserInterface for MockUI {
         self.confirms
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more confirmations configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_CONFIRMATIONS))
     }
 
     fn confirm_with_default(&self, _prompt: &str, default: bool) -> Result<bool> {
@@ -241,7 +265,7 @@ impl UserInterface for MockUI {
         self.multiselects
             .borrow_mut()
             .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("No more multiselects configured for MockUI"))
+            .ok_or_else(|| anyhow::anyhow!(ERROR_NO_MORE_MULTISELECTS))
     }
 }
 
@@ -253,7 +277,7 @@ mod tests {
     fn test_mock_ui_creation() {
         let mock_ui = MockUI::new()
             .with_selection(1)
-            .with_input("test-branch")
+            .with_input(TEST_INPUT_BRANCH)
             .with_confirm(true)
             .with_multiselect(vec![0, 2]);
 
@@ -285,24 +309,33 @@ mod tests {
         let mock_ui = MockUI::new()
             .with_selection(2)
             .with_selection(3) // For fuzzy_select
-            .with_input("feature-branch")
+            .with_input(TEST_INPUT_FEATURE)
             .with_confirm(false)
             .with_confirm(true) // For confirm_with_default fallback
             .with_multiselect(vec![1, 3]);
 
         // Test that the methods return configured values
         assert_eq!(
-            mock_ui.select("test", &["a".to_string(), "b".to_string()])?,
+            mock_ui.select(
+                TEST_PROMPT,
+                &[TEST_OPTION_A.to_string(), TEST_OPTION_B.to_string()]
+            )?,
             2
         );
         assert_eq!(
-            mock_ui.fuzzy_select("test", &["a".to_string(), "b".to_string()])?,
+            mock_ui.fuzzy_select(
+                TEST_PROMPT,
+                &[TEST_OPTION_A.to_string(), TEST_OPTION_B.to_string()]
+            )?,
             3
         );
-        assert_eq!(mock_ui.input("test")?, "feature-branch");
-        assert!(!mock_ui.confirm("test")?);
-        assert!(mock_ui.confirm_with_default("test", false)?);
-        assert_eq!(mock_ui.multiselect("test", &["a".to_string()])?, vec![1, 3]);
+        assert_eq!(mock_ui.input(TEST_PROMPT)?, TEST_INPUT_FEATURE);
+        assert!(!mock_ui.confirm(TEST_PROMPT)?);
+        assert!(mock_ui.confirm_with_default(TEST_PROMPT, false)?);
+        assert_eq!(
+            mock_ui.multiselect(TEST_PROMPT, &[TEST_OPTION_A.to_string()])?,
+            vec![1, 3]
+        );
 
         // Now the mock should be exhausted
         assert!(mock_ui.is_exhausted());
@@ -312,16 +345,19 @@ mod tests {
 
     #[test]
     fn test_mock_ui_input_with_default() -> Result<()> {
-        let mock_ui = MockUI::new().with_input("custom-input");
+        let mock_ui = MockUI::new().with_input(TEST_INPUT_CUSTOM);
 
         // Should return configured input
         assert_eq!(
-            mock_ui.input_with_default("test", "default")?,
-            "custom-input"
+            mock_ui.input_with_default(TEST_PROMPT, TEST_INPUT_DEFAULT)?,
+            TEST_INPUT_CUSTOM
         );
 
         // Should now fall back to default since no more inputs configured
-        assert_eq!(mock_ui.input_with_default("test", "fallback")?, "fallback");
+        assert_eq!(
+            mock_ui.input_with_default(TEST_PROMPT, TEST_INPUT_FALLBACK)?,
+            TEST_INPUT_FALLBACK
+        );
 
         Ok(())
     }
@@ -331,10 +367,10 @@ mod tests {
         let mock_ui = MockUI::new().with_confirm(false);
 
         // Should return configured confirmation
-        assert!(!mock_ui.confirm_with_default("test", true)?);
+        assert!(!mock_ui.confirm_with_default(TEST_PROMPT, true)?);
 
         // Should now fall back to default since no more confirmations configured
-        assert!(mock_ui.confirm_with_default("test", true)?);
+        assert!(mock_ui.confirm_with_default(TEST_PROMPT, true)?);
 
         Ok(())
     }
@@ -344,10 +380,16 @@ mod tests {
         let mock_ui = MockUI::new();
 
         // Should error when no responses are configured
-        assert!(mock_ui.select("test", &["a".to_string()]).is_err());
-        assert!(mock_ui.fuzzy_select("test", &["a".to_string()]).is_err());
-        assert!(mock_ui.input("test").is_err());
-        assert!(mock_ui.confirm("test").is_err());
-        assert!(mock_ui.multiselect("test", &["a".to_string()]).is_err());
+        assert!(mock_ui
+            .select(TEST_PROMPT, &[TEST_OPTION_A.to_string()])
+            .is_err());
+        assert!(mock_ui
+            .fuzzy_select(TEST_PROMPT, &[TEST_OPTION_A.to_string()])
+            .is_err());
+        assert!(mock_ui.input(TEST_PROMPT).is_err());
+        assert!(mock_ui.confirm(TEST_PROMPT).is_err());
+        assert!(mock_ui
+            .multiselect(TEST_PROMPT, &[TEST_OPTION_A.to_string()])
+            .is_err());
     }
 }
