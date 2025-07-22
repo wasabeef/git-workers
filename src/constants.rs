@@ -615,6 +615,18 @@ pub const BOOL_FALSE_STR: &str = "false";
 pub const EXIT_MSG_GOODBYE: &str = "Goodbye!";
 pub const EXIT_MSG_CANCELLED: &str = "Cancelled.";
 
+// List UI display constants
+pub const ICON_CURRENT_WORKTREE: &str = "→";
+pub const ICON_OTHER_WORKTREE: &str = "▸";
+pub const MODIFIED_STATUS_YES: &str = "Yes";
+pub const MODIFIED_STATUS_NO: &str = "No";
+pub const TABLE_HEADER_NAME: &str = "Name";
+pub const TABLE_HEADER_BRANCH: &str = "Branch";
+pub const TABLE_HEADER_MODIFIED: &str = "Modified";
+pub const TABLE_HEADER_PATH: &str = "Path";
+pub const TABLE_SEPARATOR: &str = "-";
+pub const CURRENT_MARKER: &str = "[current]";
+
 // Prompt suffixes
 pub const PROMPT_SUFFIX_COLON: &str = ": ";
 pub const PROMPT_SUFFIX_QUESTION: &str = "? ";
@@ -648,3 +660,147 @@ pub const EXT_TOML: &str = ".toml";
 pub const EXT_JSON: &str = ".json";
 pub const EXT_YAML: &str = ".yaml";
 pub const EXT_YML: &str = ".yml";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_section_header() {
+        let header = section_header("Test Title");
+        assert!(header.contains("Test Title"));
+        assert!(header.contains("="));
+    }
+
+    #[test]
+    fn test_header_separator() {
+        let separator = header_separator();
+        // The separator should contain 50 equals signs
+        assert!(separator.contains(&"=".repeat(HEADER_SEPARATOR_WIDTH)));
+        // The actual length may vary due to ANSI color codes
+        assert!(separator.contains("="));
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_constants_non_empty() {
+        // Test that important constants are not empty
+        assert!(!MSG_PRESS_ANY_KEY.is_empty());
+        assert!(!CONFIG_FILE_NAME.is_empty());
+        assert!(!GIT_REMOTE_PREFIX.is_empty());
+        assert!(!DEFAULT_BRANCH_MAIN.is_empty());
+        assert!(!DEFAULT_BRANCH_MASTER.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_emoji_constants() {
+        // Test that emoji constants are defined
+        assert!(!EMOJI_HOME.is_empty());
+        assert!(!EMOJI_LOCKED.is_empty());
+        assert!(!EMOJI_BRANCH.is_empty());
+        assert!(!EMOJI_DETACHED.is_empty());
+        assert!(!EMOJI_FOLDER.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_icon_constants() {
+        // Test that icon constants are defined
+        assert!(!ICON_SUCCESS.is_empty());
+        assert!(!ICON_ERROR.is_empty());
+        assert!(!ICON_WARNING.is_empty());
+        assert!(!ICON_SPINNER.is_empty());
+    }
+
+    #[test]
+    fn test_git_constants() {
+        // Test Git-related constants
+        assert_eq!(GIT_CMD, "git");
+        assert_eq!(GIT_WORKTREE, "worktree");
+        assert_eq!(GIT_BRANCH, "branch");
+        assert_eq!(GIT_TAG, "tag");
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_numeric_constants() {
+        // Test that numeric constants have reasonable values
+        assert!(SEPARATOR_WIDTH > 0);
+        assert!(HEADER_SEPARATOR_WIDTH > 0);
+        assert!(MAX_WORKTREE_NAME_LENGTH > 0);
+        assert!(MAX_FILE_SIZE_MB > 0);
+        assert!(MAX_DIRECTORY_DEPTH > 0);
+    }
+
+    #[test]
+    fn test_path_constants() {
+        // Test path-related constants
+        assert_eq!(PATH_SEPARATOR, '/');
+        assert_eq!(PATH_SEPARATOR_WINDOWS, '\\');
+        assert_eq!(PATH_PARENT, "..");
+        assert_eq!(PATH_CURRENT, ".");
+        assert_eq!(GIT_DIR, ".git");
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_time_format() {
+        // Test that time format is valid
+        assert!(!TIME_FORMAT.is_empty());
+        assert!(TIME_FORMAT.contains("%"));
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_git_reserved_names() {
+        // Test that git reserved names array is not empty
+        assert!(!GIT_RESERVED_NAMES.is_empty());
+        assert!(GIT_RESERVED_NAMES.contains(&"HEAD"));
+        assert!(GIT_RESERVED_NAMES.contains(&"refs"));
+    }
+
+    #[test]
+    fn test_hook_constants() {
+        // Test hook type constants
+        assert_eq!(HOOK_POST_CREATE, "post-create");
+        assert_eq!(HOOK_PRE_REMOVE, "pre-remove");
+        assert_eq!(HOOK_POST_SWITCH, "post-switch");
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_header_constants() {
+        // Test header text constants
+        assert!(!HEADER_WORKTREES.is_empty());
+        assert!(!HEADER_SEARCH_WORKTREES.is_empty());
+        assert!(!HEADER_CREATE_WORKTREE.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_message_constants() {
+        // Test message constants
+        assert!(!MSG_PRESS_ANY_KEY.is_empty());
+        assert!(!SUCCESS_WORKTREE_CREATED.is_empty());
+        assert!(!INFO_OPERATION_CANCELLED.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_prompt_constants() {
+        // Test prompt constants
+        assert!(!PROMPT_WORKTREE_NAME.is_empty());
+        assert!(!PROMPT_SELECT_WORKTREE.is_empty());
+        assert!(!PROMPT_SELECT_BRANCH.is_empty());
+    }
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_error_constants() {
+        // Test error message constants
+        assert!(!ERROR_LOCK_EXISTS.is_empty());
+        assert!(!ERROR_WORKTREE_CREATE.is_empty());
+        assert!(!ERROR_CONFIG_LOAD.is_empty());
+    }
+}

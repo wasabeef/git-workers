@@ -192,6 +192,7 @@ pub mod mock {
         pub fn with_worktree(self, name: &str, path: &str, branch: Option<&str>) -> Self {
             let info = WorktreeInfo {
                 name: name.to_string(),
+                git_name: name.to_string(), // For test mock, use same name
                 path: PathBuf::from(path),
                 branch: branch.unwrap_or("HEAD").to_string(),
                 is_locked: false,

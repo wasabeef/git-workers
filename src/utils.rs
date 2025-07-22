@@ -123,6 +123,21 @@ pub fn print_warning(message: &str) {
 /// requires interactive terminal capabilities.
 #[allow(dead_code)]
 pub fn get_terminal() -> Term {
+    Term::stderr()
+}
+
+/// Gets a terminal instance with validation.
+///
+/// This function checks if the current environment is a terminal and
+/// exits with an error if not. This is used by the main application
+/// to ensure interactive terminal capabilities are available.
+///
+/// # Panics
+///
+/// Panics if not running in a terminal environment, as the application
+/// requires interactive terminal capabilities.
+#[allow(dead_code)]
+pub fn get_terminal_with_validation() -> Term {
     let term = Term::stderr();
     if !term.is_term() {
         eprintln!("{ERROR_TERMINAL_REQUIRED}");
@@ -290,4 +305,155 @@ pub fn find_default_branch_directory(dir: &Path, default_branch: &str) -> Option
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_get_theme_creation() {
+        // Test that we can create a theme instance
+        let theme = get_theme();
+        // Just verify it's the expected type - we can't easily test the actual theme properties
+        let _ = theme; // Use the theme to avoid unused variable warning
+    }
+
+    #[test]
+    fn test_write_switch_path_with_env_var() {
+        let temp_dir = TempDir::new().unwrap();
+        let switch_file = temp_dir.path().join("switch.txt");
+        let test_path = std::path::Path::new("/test/path");
+
+        // Set the environment variable
+        std::env::set_var(ENV_GW_SWITCH_FILE, &switch_file);
+
+        write_switch_path(test_path);
+
+        // Verify the file was written with the correct content
+        let content = fs::read_to_string(&switch_file).unwrap();
+        assert_eq!(content, "/test/path");
+
+        // Clean up
+        std::env::remove_var(ENV_GW_SWITCH_FILE);
+    }
+
+    #[test]
+    fn test_find_config_in_default_branches_main() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_filename = "test.toml";
+
+        // Create main directory with config file
+        let main_dir = temp_dir.path().join(DEFAULT_BRANCH_MAIN);
+        fs::create_dir_all(&main_dir).unwrap();
+        let config_file = main_dir.join(config_filename);
+        fs::write(&config_file, "test config").unwrap();
+
+        // Search should find the main branch config when current default is master
+        let result = find_config_in_default_branches(
+            temp_dir.path(),
+            DEFAULT_BRANCH_MASTER, // current default is master
+            config_filename,
+        );
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), config_file);
+    }
+
+    #[test]
+    fn test_find_config_in_default_branches_master() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_filename = "test.toml";
+
+        // Create master directory with config file
+        let master_dir = temp_dir.path().join(DEFAULT_BRANCH_MASTER);
+        fs::create_dir_all(&master_dir).unwrap();
+        let config_file = master_dir.join(config_filename);
+        fs::write(&config_file, "test config").unwrap();
+
+        // Search should find the master branch config when current default is main
+        let result = find_config_in_default_branches(
+            temp_dir.path(),
+            DEFAULT_BRANCH_MAIN, // current default is main
+            config_filename,
+        );
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), config_file);
+    }
+
+    #[test]
+    fn test_find_config_in_default_branches_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Search should return None when no config files exist
+        let result = find_config_in_default_branches(
+            temp_dir.path(),
+            DEFAULT_BRANCH_MAIN,
+            "nonexistent.toml",
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_default_branch_directory_main() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create main directory
+        let main_dir = temp_dir.path().join(DEFAULT_BRANCH_MAIN);
+        fs::create_dir_all(&main_dir).unwrap();
+
+        // Search should find the main directory when current default is master
+        let result = find_default_branch_directory(temp_dir.path(), DEFAULT_BRANCH_MASTER);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), main_dir);
+    }
+
+    #[test]
+    fn test_find_default_branch_directory_master() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create master directory
+        let master_dir = temp_dir.path().join(DEFAULT_BRANCH_MASTER);
+        fs::create_dir_all(&master_dir).unwrap();
+
+        // Search should find the master directory when current default is main
+        let result = find_default_branch_directory(temp_dir.path(), DEFAULT_BRANCH_MAIN);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), master_dir);
+    }
+
+    #[test]
+    fn test_find_default_branch_directory_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Search should return None when no directories exist
+        let result = find_default_branch_directory(temp_dir.path(), DEFAULT_BRANCH_MAIN);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_default_branch_directory_skips_current_default() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create both main and master directories
+        let main_dir = temp_dir.path().join(DEFAULT_BRANCH_MAIN);
+        let master_dir = temp_dir.path().join(DEFAULT_BRANCH_MASTER);
+        fs::create_dir_all(&main_dir).unwrap();
+        fs::create_dir_all(&master_dir).unwrap();
+
+        // When current default is main, should find master
+        let result = find_default_branch_directory(temp_dir.path(), DEFAULT_BRANCH_MAIN);
+        assert_eq!(result.unwrap(), master_dir);
+
+        // When current default is master, should find main
+        let result = find_default_branch_directory(temp_dir.path(), DEFAULT_BRANCH_MASTER);
+        assert_eq!(result.unwrap(), main_dir);
+    }
 }

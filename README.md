@@ -5,7 +5,7 @@
 
 An interactive CLI tool for managing Git worktrees.
 
-https://github.com/user-attachments/assets/fb5f0213-4a9f-43e2-9557-416070d7e122
+<https://github.com/user-attachments/assets/fb5f0213-4a9f-43e2-9557-416070d7e122>
 
 ## Features
 
@@ -166,6 +166,7 @@ When creating your first worktree, Git Workers offers two patterns:
    ```
 
 2. **In subdirectory** (recommended): Organizes worktrees in a dedicated directory
+
    ```
    parent/
    └── my-repo/

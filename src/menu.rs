@@ -92,3 +92,127 @@ impl fmt::Display for MenuItem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fmt_list_worktrees() {
+        let item = MenuItem::ListWorktrees;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_LIST_WORKTREES));
+    }
+
+    #[test]
+    fn test_fmt_search_worktrees() {
+        let item = MenuItem::SearchWorktrees;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_SEARCH_WORKTREES));
+    }
+
+    #[test]
+    fn test_fmt_create_worktree() {
+        let item = MenuItem::CreateWorktree;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_CREATE_WORKTREE));
+    }
+
+    #[test]
+    fn test_fmt_delete_worktree() {
+        let item = MenuItem::DeleteWorktree;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_DELETE_WORKTREE));
+    }
+
+    #[test]
+    fn test_fmt_batch_delete() {
+        let item = MenuItem::BatchDelete;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_BATCH_DELETE));
+    }
+
+    #[test]
+    fn test_fmt_cleanup_old() {
+        let item = MenuItem::CleanupOldWorktrees;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_CLEANUP_OLD));
+    }
+
+    #[test]
+    fn test_fmt_switch_worktree() {
+        let item = MenuItem::SwitchWorktree;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_SWITCH_WORKTREE));
+    }
+
+    #[test]
+    fn test_fmt_rename_worktree() {
+        let item = MenuItem::RenameWorktree;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_RENAME_WORKTREE));
+    }
+
+    #[test]
+    fn test_fmt_edit_hooks() {
+        let item = MenuItem::EditHooks;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_EDIT_HOOKS));
+    }
+
+    #[test]
+    fn test_fmt_exit() {
+        let item = MenuItem::Exit;
+        let formatted = format!("{item}");
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains(MENU_EXIT));
+    }
+
+    #[test]
+    fn test_menu_item_enum_properties() {
+        // Test that the enum variants are properly defined
+        let items = [
+            MenuItem::ListWorktrees,
+            MenuItem::SearchWorktrees,
+            MenuItem::CreateWorktree,
+            MenuItem::DeleteWorktree,
+            MenuItem::BatchDelete,
+            MenuItem::CleanupOldWorktrees,
+            MenuItem::SwitchWorktree,
+            MenuItem::RenameWorktree,
+            MenuItem::EditHooks,
+            MenuItem::Exit,
+        ];
+
+        // Test that all items can be formatted without panic
+        for item in items {
+            let formatted = format!("{item}");
+            assert!(
+                !formatted.is_empty(),
+                "Menu item should format to non-empty string"
+            );
+        }
+    }
+
+    #[test]
+    fn test_menu_item_equality() {
+        assert_eq!(MenuItem::CreateWorktree, MenuItem::CreateWorktree);
+        assert_ne!(MenuItem::CreateWorktree, MenuItem::DeleteWorktree);
+    }
+
+    #[test]
+    fn test_menu_item_clone() {
+        let item = MenuItem::CreateWorktree;
+        let cloned = item;
+        assert_eq!(item, cloned);
+    }
+}

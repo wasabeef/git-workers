@@ -20,6 +20,7 @@
 //!
 //! The library is organized into several modules:
 //!
+//! - [`core`] - Core business logic, independent of UI and infrastructure
 //! - [`commands`] - Command implementations for menu items
 //! - [`config`] - Configuration file management
 //! - [`git`] - Core Git operations and worktree management
@@ -46,13 +47,14 @@
 pub mod commands;
 pub mod config;
 pub mod constants;
-pub mod file_copy;
-pub mod filesystem;
-pub mod git;
+pub mod core;
 pub mod git_interface;
-pub mod hooks;
+pub mod infrastructure;
 pub mod input_esc_raw;
 pub mod menu;
 pub mod repository_info;
 pub mod ui;
 pub mod utils;
+
+// Re-export infrastructure modules for backward compatibility
+pub use infrastructure::{file_copy, filesystem, git, hooks};
