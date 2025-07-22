@@ -10,6 +10,7 @@ use std::path::PathBuf;
 fn test_worktree_info_creation_basic() {
     let worktree = WorktreeInfo {
         name: "feature".to_string(),
+        git_name: "feature".to_string(),
         path: PathBuf::from("/tmp/feature"),
         branch: "feature".to_string(),
         is_current: false,
@@ -38,6 +39,7 @@ fn test_worktree_info_with_commit() {
 
     let worktree = WorktreeInfo {
         name: "feature".to_string(),
+        git_name: "feature".to_string(),
         path: PathBuf::from("/tmp/feature"),
         branch: "feature".to_string(),
         is_current: false,

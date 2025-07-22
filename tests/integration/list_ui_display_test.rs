@@ -96,6 +96,7 @@ mod tests {
         let mut worktrees = vec![
             WorktreeInfo {
                 name: "zebra".to_string(),
+                git_name: "zebra".to_string(),
                 path: PathBuf::from("/tmp/zebra"),
                 branch: "zebra".to_string(),
                 is_current: false,
@@ -106,6 +107,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "alpha".to_string(),
+                git_name: "alpha".to_string(),
                 path: PathBuf::from("/tmp/alpha"),
                 branch: "alpha".to_string(),
                 is_current: true,
@@ -116,6 +118,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "beta".to_string(),
+                git_name: "beta".to_string(),
                 path: PathBuf::from("/tmp/beta"),
                 branch: "beta".to_string(),
                 is_current: false,
@@ -150,6 +153,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "short".to_string(),
+                git_name: "short".to_string(),
                 path: PathBuf::from("/tmp/short"),
                 branch: "main".to_string(),
                 is_current: false,
@@ -160,6 +164,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "very-long-worktree-name".to_string(),
+                git_name: "very-long-worktree-name".to_string(),
                 path: PathBuf::from("/tmp/very-long"),
                 branch: "feature-with-long-name".to_string(),
                 is_current: true,
@@ -196,6 +201,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "main".to_string(),
+                git_name: "main".to_string(),
                 path: PathBuf::from("/Users/test/project/main"),
                 branch: "main".to_string(),
                 is_current: true,
@@ -206,6 +212,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "feature-x".to_string(),
+                git_name: "feature-x".to_string(),
                 path: PathBuf::from("/Users/test/project/feature-x"),
                 branch: "feature/new-ui".to_string(),
                 is_current: false,
@@ -216,6 +223,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "bugfix".to_string(),
+                git_name: "bugfix".to_string(),
                 path: PathBuf::from("/Users/test/project/bugfix"),
                 branch: "fix/critical-bug".to_string(),
                 is_current: false,

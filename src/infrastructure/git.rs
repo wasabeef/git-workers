@@ -321,8 +321,16 @@ impl GitWorktreeManager {
                 // Get additional status info for the worktree
                 let worktree_status = get_worktree_status(path);
 
+                // Use the actual directory name as the display name
+                let display_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(name)
+                    .to_string();
+
                 let info = WorktreeInfo {
-                    name: name.to_string(),
+                    name: display_name,
+                    git_name: name.to_string(),
                     path: path.to_path_buf(),
                     branch,
                     is_locked,
@@ -1427,34 +1435,41 @@ impl GitWorktreeManager {
 
         let git_common_dir = if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            PathBuf::from(path_str)
+
+            // Convert to absolute path if relative
+            let path = PathBuf::from(path_str);
+            if path.is_relative() {
+                self.get_git_dir()?.join(path)
+            } else {
+                path
+            }
         } else {
             // Fallback to repo path
             self.repo.path().to_path_buf()
         };
 
-        let old_worktree_git_dir = git_common_dir
+        // IMPORTANT: Do NOT rename the metadata directory!
+        // Git tracks worktrees by their metadata directory name, not their path.
+        // Renaming the metadata directory breaks Git's tracking.
+        let worktree_git_dir = git_common_dir
             .join(crate::constants::WORKTREES_SUBDIR)
-            .join(old_name);
-        let new_worktree_git_dir = git_common_dir
-            .join(crate::constants::WORKTREES_SUBDIR)
-            .join(new_name);
+            .join(old_name); // Keep using old name!
 
-        if old_worktree_git_dir.exists() {
-            fs.rename(&old_worktree_git_dir, &new_worktree_git_dir)?;
-
-            // Update the gitdir file
-            let gitdir_file = new_worktree_git_dir.join("gitdir");
+        if worktree_git_dir.exists() {
+            // Update the gitdir file to point to the new path
+            let gitdir_file = worktree_git_dir.join("gitdir");
             if gitdir_file.exists() {
                 let new_path_str = new_path.display();
-                fs.write(&gitdir_file, &format!("{new_path_str}{GIT_GITDIR_SUFFIX}"))?;
+                let new_content = format!("{new_path_str}{GIT_GITDIR_SUFFIX}");
+                fs.write(&gitdir_file, &new_content)?;
             }
         }
 
         // Step 3: Update the .git file in the worktree
         let git_file_path = new_path.join(GIT_DIR);
         if git_file_path.exists() {
-            let git_dir_str = new_worktree_git_dir.display();
+            // Point back to the original metadata directory name
+            let git_dir_str = worktree_git_dir.display();
             let git_file_content = format!("{GIT_GITDIR_PREFIX}{git_dir_str}\n");
             fs.write(&git_file_path, &git_file_content)?;
         }
@@ -1602,8 +1617,10 @@ fn get_worktree_status(path: &Path) -> WorktreeStatus {
 /// that is displayed in the UI or used for decision making.
 #[derive(Debug, Clone)]
 pub struct WorktreeInfo {
-    /// The name of the worktree (derived from the directory name)
+    /// The display name of the worktree (derived from the directory name)
     pub name: String,
+    /// The internal Git name of the worktree (from .git/worktrees/)
+    pub git_name: String,
     /// The absolute filesystem path to the worktree
     pub path: PathBuf,
     /// The current branch name or "detached" if in detached HEAD state
@@ -1698,6 +1715,7 @@ mod tests {
     fn test_find_common_parent_single() {
         let worktree = WorktreeInfo {
             name: "main".to_string(),
+            git_name: "main".to_string(),
             path: PathBuf::from("/home/user/project"),
             branch: "main".to_string(),
             is_current: true,
@@ -1719,6 +1737,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "main".to_string(),
+                git_name: "main".to_string(),
                 path: PathBuf::from("/home/user/project"),
                 branch: "main".to_string(),
                 is_current: true,
@@ -1729,6 +1748,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "feature".to_string(),
+                git_name: "feature".to_string(),
                 path: PathBuf::from("/home/user/project-feature"),
                 branch: "feature".to_string(),
                 is_current: false,

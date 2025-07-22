@@ -76,6 +76,7 @@ fn test_worktree_deletion_simulation() -> Result<()> {
 fn test_worktree_info_for_deletion() {
     let worktree = WorktreeInfo {
         name: "feature".to_string(),
+        git_name: "feature".to_string(),
         path: PathBuf::from("/tmp/feature"),
         branch: "feature".to_string(),
         is_current: false,

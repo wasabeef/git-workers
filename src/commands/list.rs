@@ -127,7 +127,6 @@ pub fn list_worktrees_with_ui(manager: &GitWorktreeManager, _ui: &dyn UserInterf
     // Display repository info
     let repo_info = get_repository_info();
     println!("Repository: {}", repo_info.bright_cyan());
-    println!();
 
     // Calculate column widths
     let max_name_len = sorted_worktrees
@@ -207,6 +206,7 @@ mod tests {
     fn test_format_worktree_display_basic() {
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
+            git_name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -224,6 +224,7 @@ mod tests {
     fn test_format_worktree_display_current() {
         let worktree = WorktreeInfo {
             name: "main".to_string(),
+            git_name: "main".to_string(),
             path: PathBuf::from("/tmp/main"),
             branch: "main".to_string(),
             is_current: true,
@@ -241,6 +242,7 @@ mod tests {
     fn test_format_worktree_display_locked_changes() {
         let worktree = WorktreeInfo {
             name: "locked".to_string(),
+            git_name: "locked".to_string(),
             path: PathBuf::from("/tmp/locked"),
             branch: "locked".to_string(),
             is_current: false,
@@ -258,6 +260,7 @@ mod tests {
     fn test_format_worktree_display_verbose() {
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
+            git_name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -275,6 +278,7 @@ mod tests {
     fn test_should_show_worktree_with_filter_match() {
         let worktree = WorktreeInfo {
             name: "feature-auth".to_string(),
+            git_name: "feature-auth".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -291,6 +295,7 @@ mod tests {
     fn test_should_show_worktree_with_filter_no_match() {
         let worktree = WorktreeInfo {
             name: "feature-ui".to_string(),
+            git_name: "feature-ui".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -307,6 +312,7 @@ mod tests {
     fn test_should_show_worktree_show_all() {
         let worktree = WorktreeInfo {
             name: "clean".to_string(),
+            git_name: "clean".to_string(),
             path: PathBuf::from("/tmp/clean"),
             branch: "clean".to_string(),
             is_current: false,
@@ -323,6 +329,7 @@ mod tests {
     fn test_should_show_worktree_only_changes() {
         let clean_worktree = WorktreeInfo {
             name: "clean".to_string(),
+            git_name: "clean".to_string(),
             path: PathBuf::from("/tmp/clean"),
             branch: "clean".to_string(),
             is_current: false,
@@ -334,6 +341,7 @@ mod tests {
 
         let dirty_worktree = WorktreeInfo {
             name: "dirty".to_string(),
+            git_name: "dirty".to_string(),
             path: PathBuf::from("/tmp/dirty"),
             branch: "dirty".to_string(),
             is_current: false,
@@ -354,6 +362,7 @@ mod tests {
         let test_path = "/tmp/feature";
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
+            git_name: "feature".to_string(),
             path: PathBuf::from(test_path),
             branch: "feature".to_string(),
             is_current: false,
@@ -379,6 +388,7 @@ mod tests {
         let behind_count = 3;
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
+            git_name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -397,6 +407,7 @@ mod tests {
         let worktree_name = "complex";
         let worktree = WorktreeInfo {
             name: worktree_name.to_string(),
+            git_name: worktree_name.to_string(),
             path: PathBuf::from("/tmp/complex"),
             branch: "complex".to_string(),
             is_current: true,
@@ -417,6 +428,7 @@ mod tests {
     fn test_should_show_worktree_empty_filter() {
         let worktree = WorktreeInfo {
             name: "any".to_string(),
+            git_name: "any".to_string(),
             path: PathBuf::from("/tmp/any"),
             branch: "any".to_string(),
             is_current: false,
@@ -436,6 +448,7 @@ mod tests {
         let no_match_filter = "ui";
         let worktree = WorktreeInfo {
             name: "feature-auth-login".to_string(),
+            git_name: "feature-auth-login".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,
@@ -462,6 +475,7 @@ mod tests {
         // Create test worktrees with one being current
         let worktree1 = WorktreeInfo {
             name: "zebra".to_string(),
+            git_name: "zebra".to_string(),
             path: PathBuf::from("/tmp/zebra"),
             branch: "zebra".to_string(),
             is_current: false,
@@ -472,6 +486,7 @@ mod tests {
         };
         let worktree2 = WorktreeInfo {
             name: "alpha".to_string(),
+            git_name: "alpha".to_string(),
             path: PathBuf::from("/tmp/alpha"),
             branch: "alpha".to_string(),
             is_current: true,
@@ -482,6 +497,7 @@ mod tests {
         };
         let worktree3 = WorktreeInfo {
             name: "beta".to_string(),
+            git_name: "beta".to_string(),
             path: PathBuf::from("/tmp/beta"),
             branch: "beta".to_string(),
             is_current: false,
@@ -517,6 +533,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "short".to_string(),
+                git_name: "short".to_string(),
                 path: PathBuf::from("/tmp/short"),
                 branch: "main".to_string(),
                 is_current: false,
@@ -527,6 +544,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "very-long-worktree-name".to_string(),
+                git_name: "very-long-worktree-name".to_string(),
                 path: PathBuf::from("/tmp/very-long-worktree-name"),
                 branch: "feature-with-very-long-branch-name".to_string(),
                 is_current: true,
@@ -562,6 +580,7 @@ mod tests {
     fn test_table_display_icon_selection() {
         let current_worktree = WorktreeInfo {
             name: "current".to_string(),
+            git_name: "current".to_string(),
             path: PathBuf::from("/tmp/current"),
             branch: "main".to_string(),
             is_current: true,
@@ -572,6 +591,7 @@ mod tests {
         };
         let other_worktree = WorktreeInfo {
             name: "other".to_string(),
+            git_name: "other".to_string(),
             path: PathBuf::from("/tmp/other"),
             branch: "feature".to_string(),
             is_current: false,
@@ -601,6 +621,7 @@ mod tests {
     fn test_table_display_branch_formatting() {
         let current_worktree = WorktreeInfo {
             name: "current".to_string(),
+            git_name: "current".to_string(),
             path: PathBuf::from("/tmp/current"),
             branch: "main".to_string(),
             is_current: true,
@@ -611,6 +632,7 @@ mod tests {
         };
         let other_worktree = WorktreeInfo {
             name: "other".to_string(),
+            git_name: "other".to_string(),
             path: PathBuf::from("/tmp/other"),
             branch: "feature".to_string(),
             is_current: false,
@@ -640,6 +662,7 @@ mod tests {
     fn test_table_display_modified_status() {
         let clean_worktree = WorktreeInfo {
             name: "clean".to_string(),
+            git_name: "clean".to_string(),
             path: PathBuf::from("/tmp/clean"),
             branch: "main".to_string(),
             is_current: false,
@@ -650,6 +673,7 @@ mod tests {
         };
         let dirty_worktree = WorktreeInfo {
             name: "dirty".to_string(),
+            git_name: "dirty".to_string(),
             path: PathBuf::from("/tmp/dirty"),
             branch: "feature".to_string(),
             is_current: false,

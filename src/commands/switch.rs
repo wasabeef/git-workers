@@ -307,6 +307,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "zzz-last".to_string(),
+                git_name: "zzz-last".to_string(),
                 path: PathBuf::from("/tmp/zzz"),
                 branch: "zzz-branch".to_string(),
                 is_locked: false,
@@ -317,6 +318,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "aaa-first".to_string(),
+                git_name: "aaa-first".to_string(),
                 path: PathBuf::from("/tmp/aaa"),
                 branch: "aaa-branch".to_string(),
                 is_locked: false,
@@ -338,6 +340,7 @@ mod tests {
     fn test_analyze_switch_target_basic() {
         let worktrees = vec![WorktreeInfo {
             name: "main".to_string(),
+            git_name: "main".to_string(),
             path: PathBuf::from("/tmp/main"),
             branch: "main".to_string(),
             is_locked: false,

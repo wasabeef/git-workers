@@ -380,7 +380,7 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
             utils::print_warning(&format!("Hook execution warning: {e}"));
         }
 
-        match manager.remove_worktree(&wt.name) {
+        match manager.remove_worktree(&wt.git_name) {
             Ok(_) => {
                 let name_red = wt.name.bright_red();
                 utils::print_success(&format!("Deleted worktree '{name_red}'"));
@@ -846,6 +846,7 @@ mod tests {
     fn test_create_search_items() -> Result<()> {
         let worktree_info = WorktreeInfo {
             name: "feature-branch".to_string(),
+            git_name: "feature-branch".to_string(),
             path: std::path::PathBuf::from("/test/feature-branch"),
             branch: "feature/test".to_string(),
             is_current: true,
@@ -872,6 +873,7 @@ mod tests {
     fn test_validate_search_selection() -> Result<()> {
         let worktree_info = WorktreeInfo {
             name: "feature-branch".to_string(),
+            git_name: "feature-branch".to_string(),
             path: std::path::PathBuf::from("/test/feature-branch"),
             branch: "feature/test".to_string(),
             is_current: false,
@@ -898,6 +900,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "main".to_string(),
+                git_name: "main".to_string(),
                 path: std::path::PathBuf::from("/test/main"),
                 branch: "main".to_string(),
                 is_current: true,
@@ -908,6 +911,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "feature-branch".to_string(),
+                git_name: "feature-branch".to_string(),
                 path: std::path::PathBuf::from("/test/feature-branch"),
                 branch: "feature/test".to_string(),
                 is_current: false,

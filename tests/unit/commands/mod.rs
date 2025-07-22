@@ -77,6 +77,7 @@ fn test_get_worktree_icon_current_worktree() -> Result<()> {
 
     let worktree = WorktreeInfo {
         name: "main".to_string(),
+        git_name: "main".to_string(),
         path: worktree_path.clone(),
         branch: "main".to_string(),
         is_current: true,
@@ -101,6 +102,7 @@ fn test_get_worktree_icon_with_changes() -> Result<()> {
 
     let worktree = WorktreeInfo {
         name: "feature".to_string(),
+        git_name: "feature".to_string(),
         path: worktree_path,
         branch: "feature".to_string(),
         is_current: false,
@@ -126,6 +128,7 @@ fn test_get_worktree_icon_locked() -> Result<()> {
 
     let worktree = WorktreeInfo {
         name: "locked".to_string(),
+        git_name: "locked".to_string(),
         path: worktree_path,
         branch: "locked".to_string(),
         is_current: false,

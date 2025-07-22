@@ -240,7 +240,7 @@ pub fn delete_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
 
     // Create deletion configuration
     let config = WorktreeDeleteConfig {
-        name: analysis.worktree.name.clone(),
+        name: analysis.worktree.git_name.clone(), // Use git_name for internal operations
         path: analysis.worktree.path.clone(),
         branch: analysis.worktree.branch.clone(),
         delete_branch,
@@ -304,6 +304,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: "main".to_string(),
+                git_name: "main".to_string(),
                 path: PathBuf::from("/tmp/main"),
                 branch: "main".to_string(),
                 is_current: true,
@@ -314,6 +315,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: "feature".to_string(),
+                git_name: "feature".to_string(),
                 path: PathBuf::from("/tmp/feature"),
                 branch: "feature".to_string(),
                 is_current: false,
@@ -339,6 +341,7 @@ mod tests {
     fn test_deletion_analysis_creation() {
         let worktree = WorktreeInfo {
             name: "feature".to_string(),
+            git_name: "feature".to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: "feature".to_string(),
             is_current: false,

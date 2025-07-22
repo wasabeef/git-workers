@@ -257,7 +257,7 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
     };
 
     // Use business logic to validate rename operation
-    if let Err(e) = validate_rename_operation(&worktree.name, &new_name) {
+    if let Err(e) = validate_rename_operation(&worktree.git_name, &new_name) {
         utils::print_warning(&e.to_string());
         return Ok(());
     }
@@ -331,7 +331,7 @@ pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterf
 
     // Create rename configuration
     let config = WorktreeRenameConfig {
-        old_name: worktree.name.clone(),
+        old_name: worktree.git_name.clone(), // Use git_name for internal operations
         new_name: new_name.clone(),
         old_path: worktree.path.clone(),
         new_path,
@@ -432,6 +432,7 @@ mod tests {
         let worktrees = vec![
             WorktreeInfo {
                 name: main_name.to_string(),
+                git_name: main_name.to_string(),
                 path: PathBuf::from("/tmp/main"),
                 branch: main_name.to_string(),
                 is_current: true, // Current worktree - should be filtered out
@@ -442,6 +443,7 @@ mod tests {
             },
             WorktreeInfo {
                 name: feature_name.to_string(),
+                git_name: feature_name.to_string(),
                 path: PathBuf::from("/tmp/feature"),
                 branch: feature_name.to_string(),
                 is_current: false,
@@ -462,6 +464,7 @@ mod tests {
         let feature_name = "feature";
         let worktree = WorktreeInfo {
             name: feature_name.to_string(),
+            git_name: feature_name.to_string(),
             path: PathBuf::from("/tmp/feature"),
             branch: feature_name.to_string(),
             is_current: false,
@@ -515,6 +518,7 @@ mod tests {
         let feature_branch = "feature/auth";
         let worktree = WorktreeInfo {
             name: worktree_name.to_string(),
+            git_name: worktree_name.to_string(),
             path: PathBuf::from("/tmp/auth"),
             branch: feature_branch.to_string(),
             is_current: false,
@@ -537,6 +541,7 @@ mod tests {
     fn test_analyze_rename_requirements_detached_head() {
         let worktree = WorktreeInfo {
             name: "detached".to_string(),
+            git_name: "detached".to_string(),
             path: PathBuf::from("/tmp/detached"),
             branch: DEFAULT_BRANCH_DETACHED.to_string(),
             is_current: false,
