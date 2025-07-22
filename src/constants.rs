@@ -203,7 +203,7 @@ pub const PROMPT_SELECT_BRANCH: &str = "Select a branch";
 pub const PROMPT_SELECT_TAG: &str = "Select a tag";
 pub const PROMPT_DAYS_TO_KEEP: &str = "Days to keep";
 pub const PROMPT_SWITCH_WORKTREE: &str = "Switch to the new worktree?";
-pub const PROMPT_CUSTOM_PATH: &str = "Custom path (relative to repository root)";
+pub const PROMPT_CUSTOM_PATH: &str = "Directory path";
 pub const PROMPT_NEW_BRANCH_NAME: &str = "New branch name";
 pub const PROMPT_BASE_BRANCH: &str = "Base branch for new branch";
 pub const PROMPT_FIRST_WORKTREE: &str = "First worktree - choose location:";
@@ -661,24 +661,134 @@ pub const EXT_JSON: &str = ".json";
 pub const EXT_YAML: &str = ".yaml";
 pub const EXT_YML: &str = ".yml";
 
+// Test constants
+pub const TEST_TITLE: &str = "Test Title";
+pub const TEST_EQUALS_SIGN: &str = "=";
+pub const TEST_PERCENT_SIGN: &str = "%";
+pub const TEST_GIT_HEAD: &str = "HEAD";
+pub const TEST_GIT_REFS: &str = "refs";
+
+// Hardcoded string values from create.rs
+pub const STRING_SAME_LEVEL: &str = "same-level";
+pub const STRING_SUBDIRECTORY: &str = "subdirectory";
+pub const STRING_CUSTOM: &str = "custom";
+pub const ERROR_INVALID_WORKTREE_LOCATION: &str = "Invalid worktree location type: {}";
+pub const ERROR_CUSTOM_PATH_REQUIRED: &str = "Custom path required when location is 'custom'";
+pub const ERROR_INVALID_LOCATION_TYPE: &str = "Invalid location type: {}";
+pub const ERROR_CANNOT_DETERMINE_PARENT_DIR: &str = "Cannot determine parent directory";
+
+// Git command format strings
+pub const FORMAT_REFS_TAGS: &str = "refs/tags/{}";
+pub const FORMAT_WORKTREE_PATH_SAME_LEVEL: &str = "../{}";
+pub const FORMAT_WORKTREE_PATH_SUBDIRECTORY: &str = "{}/{}";
+pub const FORMAT_CUSTOM_PATH_WITH_NAME: &str = "{}/{}";
+pub const FORMAT_DOT_WITH_NAME: &str = "./{}";
+
+// UI text strings from create.rs
+pub const MSG_FIRST_WORKTREE_CHOOSE: &str = "First worktree - choose location:";
+pub const MSG_SPECIFY_DIRECTORY_PATH: &str = "Specify directory path (relative to project root):";
+pub const MSG_EXAMPLES_WORKTREE_NAME: &str = "Examples (worktree name: '{}'):";
+pub const MSG_EXAMPLE_BRANCH: &str = "branch/";
+pub const MSG_EXAMPLE_HOTFIX: &str = "hotfix/";
+pub const MSG_EXAMPLE_PARENT: &str = "../";
+pub const MSG_EXAMPLE_DOT: &str = "./";
+pub const MSG_CREATES_AT_BRANCH: &str = "→ creates at ./branch/{}";
+pub const MSG_CREATES_AT_HOTFIX: &str = "→ creates at ./hotfix/{}";
+pub const MSG_CREATES_AT_PARENT: &str = "→ creates at ../{} (outside project)";
+pub const MSG_CREATES_AT_DOT: &str = "→ creates at ./{} (project root)";
+
+// Branch options text
+pub const OPTION_CREATE_FROM_HEAD_FULL: &str = "Create from current HEAD";
+pub const OPTION_SELECT_BRANCH_FULL: &str = "Select branch";
+pub const OPTION_SELECT_TAG_FULL: &str = "Select tag";
+
+// Worktree location options text
+pub const FORMAT_SAME_LEVEL_OPTION: &str = "Same level as repository (../{})";
+pub const FORMAT_SUBDIRECTORY_OPTION: &str = "In subdirectory ({}/{}/{})";
+pub const OPTION_CUSTOM_PATH_FULL: &str = "Custom path (specify relative to project root)";
+
+// Branch list formatting
+pub const FORMAT_BRANCH_WITH_WORKTREE: &str = "{}{}";
+pub const FORMAT_BRANCH_WITHOUT_WORKTREE: &str = "{}{}";
+pub const MSG_BRANCH_IN_USE_BY: &str = " (in use by '{}')";
+
+// Conflict action messages
+pub const MSG_CREATE_NEW_BRANCH_FROM: &str = "Create new branch '{}' from '{}'";
+pub const MSG_CHANGE_BRANCH_NAME: &str = "Change the branch name";
+pub const MSG_CANCEL: &str = "Cancel";
+pub const MSG_USE_EXISTING_LOCAL: &str = "Use the existing local branch instead";
+pub const MSG_USE_EXISTING_LOCAL_IN_USE: &str =
+    "Use the existing local branch instead (in use by '{}')";
+pub const MSG_ENTER_NEW_BRANCH_NAME: &str = "Enter new branch name (base: {})";
+pub const MSG_BRANCH_ALREADY_EXISTS: &str = "Branch '{}' already exists";
+pub const MSG_BRANCH_NAME_CANNOT_BE_EMPTY: &str = "Branch name cannot be empty";
+pub const MSG_BRANCH_ALREADY_CHECKED_OUT: &str =
+    "Branch '{}' is already checked out in worktree '{}'";
+pub const MSG_LOCAL_BRANCH_EXISTS: &str = "A local branch '{}' already exists for remote '{}'";
+pub const MSG_CREATE_NEW_BRANCH_FROM_REMOTE: &str = "Create new branch '{}' from '{}{}' ";
+pub const MSG_PLEASE_SELECT_DIFFERENT: &str = "Please select a different option.";
+
+// Tag formatting
+pub const FORMAT_TAG_WITH_MESSAGE: &str = "{}{} - {}";
+pub const FORMAT_TAG_WITHOUT_MESSAGE: &str = "{}{}";
+pub const MSG_SEARCH_TAGS_FUZZY: &str = "Type to search tags (fuzzy search enabled):";
+pub const MSG_SEARCH_BRANCHES_FUZZY: &str = "Type to search branches (fuzzy search enabled):";
+
+// Preview labels and messages
+pub const LABEL_PREVIEW_HEADER: &str = "Preview:";
+pub const LABEL_NAME_PREVIEW: &str = "Name:";
+pub const LABEL_NEW_BRANCH_PREVIEW: &str = "New Branch:";
+pub const LABEL_BRANCH_PREVIEW: &str = "Branch:";
+pub const LABEL_FROM_PREVIEW: &str = "From:";
+pub const MSG_FROM_CURRENT_HEAD: &str = "Current HEAD";
+pub const MSG_FROM_TAG_PREFIX: &str = "tag: ";
+
+// Progress messages
+pub const MSG_CREATING_WORKTREE: &str = "Creating worktree...";
+
+// Success messages
+pub const FORMAT_WORKTREE_CREATED: &str = "Created worktree '{}' at {}";
+pub const MSG_COPYING_CONFIGURED_FILES: &str = "Copying configured files...";
+pub const FORMAT_COPIED_FILES_COUNT: &str = "Copied {} files";
+pub const MSG_COPIED_FILE_PREFIX: &str = "  ✓ ";
+
+// Switch messages
+pub const MSG_SWITCH_TO_NEW_WORKTREE: &str = "Switch to the new worktree?";
+pub const MSG_SWITCHING_TO_WORKTREE: &str = "+ Switching to worktree '{}'";
+
+// Error messages
+pub const FORMAT_FAILED_CREATE_WORKTREE: &str = "Failed to create worktree: {}";
+pub const FORMAT_FAILED_COPY_FILES: &str = "Failed to copy files: {}";
+pub const FORMAT_HOOK_EXECUTION_WARNING: &str = "Hook execution warning: {}";
+pub const FORMAT_INVALID_WORKTREE_NAME: &str = "Invalid worktree name: {}";
+pub const FORMAT_INVALID_CUSTOM_PATH: &str = "Invalid custom path: {}";
+
+// Default values
+pub const REPO_NAME_FALLBACK: &str = "repo";
+pub const SWITCH_CONFIRM_DEFAULT: bool = true;
+
+// Path manipulation
+pub const SLASH_CHAR: char = '/';
+pub const ELLIPSIS: &str = "...";
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_section_header() {
-        let header = section_header("Test Title");
-        assert!(header.contains("Test Title"));
-        assert!(header.contains("="));
+        let header = section_header(TEST_TITLE);
+        assert!(header.contains(TEST_TITLE));
+        assert!(header.contains(TEST_EQUALS_SIGN));
     }
 
     #[test]
     fn test_header_separator() {
         let separator = header_separator();
         // The separator should contain 50 equals signs
-        assert!(separator.contains(&"=".repeat(HEADER_SEPARATOR_WIDTH)));
+        assert!(separator.contains(&TEST_EQUALS_SIGN.repeat(HEADER_SEPARATOR_WIDTH)));
         // The actual length may vary due to ANSI color codes
-        assert!(separator.contains("="));
+        assert!(separator.contains(TEST_EQUALS_SIGN));
     }
 
     #[test]
@@ -748,7 +858,7 @@ mod tests {
     fn test_time_format() {
         // Test that time format is valid
         assert!(!TIME_FORMAT.is_empty());
-        assert!(TIME_FORMAT.contains("%"));
+        assert!(TIME_FORMAT.contains(TEST_PERCENT_SIGN));
     }
 
     #[test]
@@ -756,8 +866,8 @@ mod tests {
     fn test_git_reserved_names() {
         // Test that git reserved names array is not empty
         assert!(!GIT_RESERVED_NAMES.is_empty());
-        assert!(GIT_RESERVED_NAMES.contains(&"HEAD"));
-        assert!(GIT_RESERVED_NAMES.contains(&"refs"));
+        assert!(GIT_RESERVED_NAMES.contains(&TEST_GIT_HEAD));
+        assert!(GIT_RESERVED_NAMES.contains(&TEST_GIT_REFS));
     }
 
     #[test]

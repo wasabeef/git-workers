@@ -11,9 +11,13 @@ use crate::constants::{
     DEFAULT_MENU_SELECTION, DEFAULT_REPO_NAME, ERROR_CUSTOM_PATH_EMPTY, ERROR_WORKTREE_NAME_EMPTY,
     FUZZY_SEARCH_THRESHOLD, GIT_REMOTE_PREFIX, HEADER_CREATE_WORKTREE, HOOK_POST_CREATE,
     HOOK_POST_SWITCH, ICON_LOCAL_BRANCH, ICON_REMOTE_BRANCH, ICON_TAG_INDICATOR,
+    MSG_EXAMPLE_BRANCH, MSG_EXAMPLE_DOT, MSG_EXAMPLE_HOTFIX, MSG_EXAMPLE_PARENT,
+    MSG_FIRST_WORKTREE_CHOOSE, MSG_SPECIFY_DIRECTORY_PATH, OPTION_CREATE_FROM_HEAD_FULL,
+    OPTION_CUSTOM_PATH_FULL, OPTION_SELECT_BRANCH_FULL, OPTION_SELECT_TAG_FULL,
     PROGRESS_BAR_TICK_MILLIS, PROMPT_CONFLICT_ACTION, PROMPT_CUSTOM_PATH, PROMPT_SELECT_BRANCH,
     PROMPT_SELECT_BRANCH_OPTION, PROMPT_SELECT_TAG, PROMPT_SELECT_WORKTREE_LOCATION,
-    PROMPT_WORKTREE_NAME, TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREES_SUBDIR,
+    PROMPT_WORKTREE_NAME, REPO_NAME_FALLBACK, SLASH_CHAR, STRING_CUSTOM, STRING_SAME_LEVEL,
+    STRING_SUBDIRECTORY, TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREES_SUBDIR,
     WORKTREE_LOCATION_CUSTOM_PATH, WORKTREE_LOCATION_SAME_LEVEL, WORKTREE_LOCATION_SUBDIRECTORY,
 };
 use crate::file_copy;
@@ -49,7 +53,7 @@ pub enum BranchSource {
 /// Validate worktree location type
 pub fn validate_worktree_location(location: &str) -> Result<()> {
     match location {
-        "same-level" | "subdirectory" | "custom" => Ok(()),
+        STRING_SAME_LEVEL | STRING_SUBDIRECTORY | STRING_CUSTOM => Ok(()),
         _ => Err(anyhow!("Invalid worktree location type: {}", location)),
     }
 }
@@ -64,30 +68,30 @@ pub fn determine_worktree_path(
     validate_worktree_location(location)?;
 
     match location {
-        "same-level" => {
+        STRING_SAME_LEVEL => {
             let path = git_dir
                 .parent()
                 .ok_or_else(|| anyhow!("Cannot determine parent directory"))?
                 .join(name);
-            Ok((path, "same-level".to_string()))
+            Ok((path, STRING_SAME_LEVEL.to_string()))
         }
-        "subdirectory" => {
+        STRING_SUBDIRECTORY => {
             let repo_name = git_dir
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or("repo");
+                .unwrap_or(REPO_NAME_FALLBACK);
             let path = git_dir
                 .parent()
                 .ok_or_else(|| anyhow!("Cannot determine parent directory"))?
                 .join(repo_name)
                 .join(WORKTREES_SUBDIR)
                 .join(name);
-            Ok((path, "subdirectory".to_string()))
+            Ok((path, STRING_SUBDIRECTORY.to_string()))
         }
-        "custom" => {
+        STRING_CUSTOM => {
             let path = custom_path
                 .ok_or_else(|| anyhow!("Custom path required when location is 'custom'"))?;
-            Ok((git_dir.join(path), "custom".to_string()))
+            Ok((git_dir.join(path), STRING_CUSTOM.to_string()))
         }
         _ => Err(anyhow!("Invalid location type: {}", location)),
     }
@@ -214,7 +218,7 @@ pub fn create_worktree_with_ui(
     // If this is the first worktree, let user choose the pattern
     let final_name = if !has_worktrees {
         println!();
-        let msg = "First worktree - choose location:".bright_cyan();
+        let msg = MSG_FIRST_WORKTREE_CHOOSE.bright_cyan();
         println!("{msg}");
 
         // Get repository name for display
@@ -226,9 +230,12 @@ pub fn create_worktree_with_ui(
             .unwrap_or(DEFAULT_REPO_NAME);
 
         let options = vec![
-            format!("Same level as repository (../{name})"),
-            format!("In subdirectory ({repo_name}/{WORKTREES_SUBDIR}/{name})"),
-            "Custom path (specify relative to project root)".to_string(),
+            format!("Same level as repository (../{})", name),
+            format!(
+                "In subdirectory ({}/{}/{})",
+                repo_name, WORKTREES_SUBDIR, name
+            ),
+            OPTION_CUSTOM_PATH_FULL.to_string(),
         ];
 
         let selection = match ui.select_with_default(
@@ -246,11 +253,32 @@ pub fn create_worktree_with_ui(
             WORKTREE_LOCATION_CUSTOM_PATH => {
                 // Custom path input
                 println!();
-                let msg = "Enter custom path (relative to project root):".bright_cyan();
+                let msg = MSG_SPECIFY_DIRECTORY_PATH.bright_cyan();
                 println!("{msg}");
-                let examples =
-                    "Examples: ../custom-dir/worktree-name, temp/worktrees/name".dimmed();
-                println!("{examples}");
+
+                // Show more helpful examples with actual worktree name
+                println!();
+                println!(
+                    "{}:",
+                    format!("Examples (worktree name: '{name}'):").bright_black()
+                );
+                println!(
+                    "  • {} → creates at ./branch/{name}",
+                    MSG_EXAMPLE_BRANCH.green()
+                );
+                println!(
+                    "  • {} → creates at ./hotfix/{name}",
+                    MSG_EXAMPLE_HOTFIX.green()
+                );
+                println!(
+                    "  • {} → creates at ../{name} (outside project)",
+                    MSG_EXAMPLE_PARENT.green()
+                );
+                println!(
+                    "  • {} → creates at ./{name} (project root)",
+                    MSG_EXAMPLE_DOT.green()
+                );
+                println!();
 
                 let custom_path = match ui.input(PROMPT_CUSTOM_PATH) {
                     Ok(path) => path.trim().to_string(),
@@ -262,13 +290,25 @@ pub fn create_worktree_with_ui(
                     return Ok(false);
                 }
 
+                // Always treat custom path as a directory and append worktree name
+                let custom_path = custom_path.trim_end_matches(SLASH_CHAR);
+                let final_path = if custom_path.is_empty() {
+                    // Just "/" was entered - use worktree name directly
+                    name.clone()
+                } else if custom_path == "." {
+                    // "./" was entered - create in project root
+                    format!("./{name}")
+                } else {
+                    format!("{custom_path}/{name}")
+                };
+
                 // Validate custom path
-                if let Err(e) = validate_custom_path(&custom_path) {
+                if let Err(e) = validate_custom_path(&final_path) {
                     utils::print_error(&format!("Invalid custom path: {e}"));
                     return Ok(false);
                 }
 
-                custom_path
+                final_path
             }
             _ => format!("{WORKTREES_SUBDIR}/{name}"), // Default fallback
         }
@@ -279,9 +319,9 @@ pub fn create_worktree_with_ui(
     // Branch handling
     println!();
     let branch_options = vec![
-        "Create from current HEAD".to_string(),
-        "Select branch".to_string(),
-        "Select tag".to_string(),
+        OPTION_CREATE_FROM_HEAD_FULL.to_string(),
+        OPTION_SELECT_BRANCH_FULL.to_string(),
+        OPTION_SELECT_TAG_FULL.to_string(),
     ];
 
     let branch_choice = match ui.select_with_default(
