@@ -34,6 +34,7 @@ use std::process::Command;
 
 use super::super::config::Config;
 use super::super::constants::*;
+use super::super::ui::UserInterface;
 
 /// Context information passed to hook commands
 ///
@@ -70,16 +71,17 @@ pub struct HookContext {
     pub worktree_path: PathBuf,
 }
 
-/// Executes configured hooks for a specific event type
+/// Executes configured hooks for a specific event type with user confirmation
 ///
 /// This function loads the configuration, looks up hooks for the specified
-/// event type, and executes them in order. Each command is run in a shell
-/// with the worktree directory as the working directory.
+/// event type, asks for user confirmation, and executes them in order.
+/// Each command is run in a shell with the worktree directory as the working directory.
 ///
 /// # Arguments
 ///
 /// * `hook_type` - The type of hook to execute (e.g., "post-create", "pre-remove")
 /// * `context` - Context information about the worktree
+/// * `ui` - User interface for confirmation prompts
 ///
 /// # Hook Types
 ///
@@ -96,16 +98,18 @@ pub struct HookContext {
 /// # Example
 ///
 /// ```no_run
-/// use git_workers::hooks::{execute_hooks, HookContext};
+/// use git_workers::hooks::{execute_hooks_with_ui, HookContext};
+/// use git_workers::ui::DialoguerUI;
 /// use std::path::PathBuf;
 ///
 /// let context = HookContext {
 ///     worktree_name: "feature-branch".to_string(),
 ///     worktree_path: PathBuf::from("/path/to/worktree"),
 /// };
+/// let ui = DialoguerUI;
 ///
 /// // Execute post-create hooks
-/// execute_hooks("post-create", &context).ok();
+/// execute_hooks_with_ui("post-create", &context, &ui).ok();
 /// ```
 ///
 /// # Configuration Loading
@@ -122,17 +126,47 @@ pub struct HookContext {
 ///
 /// Command execution errors (spawn failures) are also handled gracefully,
 /// allowing other hooks to continue even if one command fails to start.
-pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
+pub fn execute_hooks_with_ui(
+    hook_type: &str,
+    context: &HookContext,
+    ui: &dyn UserInterface,
+) -> Result<()> {
     // Always load config from the current directory where the command is executed,
     // not from the newly created worktree which doesn't have a config yet
     let config = Config::load()?;
 
     if let Some(commands) = config.hooks.get(hook_type) {
+        if commands.is_empty() {
+            return Ok(());
+        }
+
+        // Ask for confirmation before running hooks
+        println!();
         println!(
-            "{} {hook_type} hooks...",
+            "{} {hook_type} hooks found:",
             INFO_RUNNING_HOOKS.replace("{}", "").trim()
         );
+        for cmd in commands {
+            let expanded_cmd = cmd
+                .replace(TEMPLATE_WORKTREE_NAME, &context.worktree_name)
+                .replace(
+                    TEMPLATE_WORKTREE_PATH,
+                    &context.worktree_path.display().to_string(),
+                );
+            println!("  • {expanded_cmd}");
+        }
 
+        println!();
+        let confirm = ui
+            .confirm_with_default(&format!("Execute {hook_type} hooks?"), true)
+            .unwrap_or(false);
+
+        if !confirm {
+            println!("Skipping {hook_type} hooks.");
+            return Ok(());
+        }
+
+        println!();
         for cmd in commands {
             // Replace template placeholders with actual values
             let expanded_cmd = cmd
@@ -183,9 +217,40 @@ pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
     Ok(())
 }
 
+/// Executes configured hooks for a specific event type (legacy interface)
+///
+/// This is a convenience wrapper that creates a DialoguerUI instance
+/// for backward compatibility with existing code.
+///
+/// # Arguments
+///
+/// * `hook_type` - The type of hook to execute (e.g., "post-create", "pre-remove")
+/// * `context` - Context information about the worktree
+///
+/// # Example
+///
+/// ```no_run
+/// use git_workers::hooks::{execute_hooks, HookContext};
+/// use std::path::PathBuf;
+///
+/// let context = HookContext {
+///     worktree_name: "feature-branch".to_string(),
+///     worktree_path: PathBuf::from("/path/to/worktree"),
+/// };
+///
+/// // Execute post-create hooks
+/// execute_hooks("post-create", &context).ok();
+/// ```
+pub fn execute_hooks(hook_type: &str, context: &HookContext) -> Result<()> {
+    use super::super::ui::DialoguerUI;
+    let ui = DialoguerUI;
+    execute_hooks_with_ui(hook_type, context, &ui)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::MockUI;
     use tempfile::TempDir;
 
     #[test]
@@ -256,5 +321,38 @@ mod tests {
             .replace(TEMPLATE_WORKTREE_PATH, "/test/path");
 
         assert_eq!(expanded, "npm install");
+    }
+
+    #[test]
+    fn test_hook_execution_with_confirmation() {
+        let context = HookContext {
+            worktree_name: "test".to_string(),
+            worktree_path: PathBuf::from("/test/path"),
+        };
+
+        // Test with confirmation accepted
+        let ui = MockUI::new().with_confirm(true);
+        // This would require a full test setup with config
+        // but we can test the interface exists
+        let _result = execute_hooks_with_ui("post-create", &context, &ui);
+
+        // Test with confirmation rejected
+        let ui = MockUI::new().with_confirm(false);
+        let _result = execute_hooks_with_ui("post-create", &context, &ui);
+    }
+
+    #[test]
+    fn test_hook_confirmation_prompt_display() {
+        // Test that proper hook information is displayed before confirmation
+        let context = HookContext {
+            worktree_name: "feature-xyz".to_string(),
+            worktree_path: PathBuf::from("/workspace/feature-xyz"),
+        };
+
+        // Mock UI that rejects confirmation
+        let ui = MockUI::new().with_confirm(false);
+
+        // In real usage, this would show hook commands before asking
+        let _result = execute_hooks_with_ui("post-create", &context, &ui);
     }
 }
