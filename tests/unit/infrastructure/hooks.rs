@@ -4,7 +4,8 @@
 //! and template variable substitution.
 
 use anyhow::Result;
-use git_workers::infrastructure::hooks::{execute_hooks, HookContext};
+use git_workers::infrastructure::hooks::{execute_hooks, execute_hooks_with_ui, HookContext};
+use git_workers::ui::MockUI;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -234,5 +235,195 @@ fn test_hook_execution_flow_simulation() -> Result<()> {
         // execute_hooks("post-create", &context)?;
     }
 
+    Ok(())
+}
+
+// ============================================================================
+// Hook Confirmation Tests
+// ============================================================================
+
+#[test]
+#[ignore = "Hook execution requires specific command availability"]
+fn test_hook_confirmation_accepted() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+
+    // Initialize git repository
+    git2::Repository::init(temp_dir.path())?;
+
+    // Create config with hooks
+    let config_content = r#"
+[hooks]
+post-create = ["echo 'test hook'"]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(temp_dir.path())?;
+
+    let context = HookContext {
+        worktree_name: "test".to_string(),
+        worktree_path: temp_dir.path().to_path_buf(),
+    };
+
+    // Mock UI that accepts confirmation
+    let ui = MockUI::new().with_confirm(true);
+
+    // Execute hooks with UI - should succeed when confirmation is accepted
+    let result = execute_hooks_with_ui("post-create", &context, &ui);
+
+    std::env::set_current_dir(original_dir)?;
+
+    assert!(result.is_ok());
+    Ok(())
+}
+
+#[test]
+#[ignore = "Hook execution requires specific command availability"]
+fn test_hook_confirmation_rejected() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+
+    // Initialize git repository
+    git2::Repository::init(temp_dir.path())?;
+
+    // Create config with hooks
+    let config_content = r#"
+[hooks]
+post-create = ["echo 'test hook'"]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(temp_dir.path())?;
+
+    let context = HookContext {
+        worktree_name: "test".to_string(),
+        worktree_path: temp_dir.path().to_path_buf(),
+    };
+
+    // Mock UI that rejects confirmation
+    let ui = MockUI::new().with_confirm(false);
+
+    // Execute hooks with UI - should succeed but skip execution
+    let result = execute_hooks_with_ui("post-create", &context, &ui);
+
+    std::env::set_current_dir(original_dir)?;
+
+    // Should still return Ok even when hooks are skipped
+    assert!(result.is_ok());
+    Ok(())
+}
+
+#[test]
+#[ignore = "Hook execution requires specific command availability"]
+fn test_hook_with_template_variables_confirmation() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+
+    // Initialize git repository
+    git2::Repository::init(temp_dir.path())?;
+
+    // Create config with hooks using template variables
+    let config_content = r#"
+[hooks]
+post-create = [
+    "echo 'Created worktree: {{worktree_name}}'",
+    "echo 'At path: {{worktree_path}}'"
+]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(temp_dir.path())?;
+
+    let context = HookContext {
+        worktree_name: "feature-xyz".to_string(),
+        worktree_path: PathBuf::from("/workspace/feature-xyz"),
+    };
+
+    // Mock UI that accepts confirmation
+    let ui = MockUI::new().with_confirm(true);
+
+    // Execute hooks - template variables should be expanded in display
+    let result = execute_hooks_with_ui("post-create", &context, &ui);
+
+    std::env::set_current_dir(original_dir)?;
+
+    assert!(result.is_ok());
+    Ok(())
+}
+
+#[test]
+#[ignore = "Hook execution requires specific command availability"]
+fn test_multiple_hook_types_with_confirmation() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+
+    // Initialize git repository
+    git2::Repository::init(temp_dir.path())?;
+
+    // Create config with multiple hook types
+    let config_content = r#"
+[hooks]
+post-create = ["echo 'post-create'"]
+pre-remove = ["echo 'pre-remove'"]
+post-switch = ["echo 'post-switch'"]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(temp_dir.path())?;
+
+    let context = HookContext {
+        worktree_name: "test".to_string(),
+        worktree_path: temp_dir.path().to_path_buf(),
+    };
+
+    // Test each hook type with different confirmation responses
+    let hook_types = vec![
+        ("post-create", true),
+        ("pre-remove", false),
+        ("post-switch", true),
+    ];
+
+    for (hook_type, confirm) in hook_types {
+        let ui = MockUI::new().with_confirm(confirm);
+        let result = execute_hooks_with_ui(hook_type, &context, &ui);
+        assert!(result.is_ok(), "Hook type {hook_type} should succeed");
+    }
+
+    std::env::set_current_dir(original_dir)?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "Hook execution requires specific command availability"]
+fn test_empty_hooks_no_confirmation_needed() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+
+    // Initialize git repository
+    git2::Repository::init(temp_dir.path())?;
+
+    // Create config with empty hooks
+    let config_content = r#"
+[hooks]
+post-create = []
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(temp_dir.path())?;
+
+    let context = HookContext {
+        worktree_name: "test".to_string(),
+        worktree_path: temp_dir.path().to_path_buf(),
+    };
+
+    // Mock UI without any confirmations configured
+    let ui = MockUI::new();
+
+    // Should succeed without asking for confirmation
+    let result = execute_hooks_with_ui("post-create", &context, &ui);
+
+    std::env::set_current_dir(original_dir)?;
+
+    assert!(result.is_ok());
     Ok(())
 }

@@ -15,7 +15,7 @@ pub mod hooks;
 pub use file_copy::copy_configured_files;
 pub use filesystem::{FileSystem, RealFileSystem};
 pub use git::{GitWorktreeManager, WorktreeInfo};
-pub use hooks::{execute_hooks, HookContext};
+pub use hooks::{execute_hooks, execute_hooks_with_ui, HookContext};
 
 // Re-export FilesConfig from config module
 pub use super::config::FilesConfig;
