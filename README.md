@@ -154,9 +154,9 @@ copy = [
 
 ### Worktree Patterns
 
-When creating your first worktree, Git Workers offers two patterns:
+When creating your first worktree, Git Workers offers two options:
 
-1. **Same level as repository**: Creates worktrees as siblings to your main repository
+1. **Same level as repository**: Creates worktrees as siblings to the repository
 
    ```
    parent/
@@ -165,21 +165,24 @@ When creating your first worktree, Git Workers offers two patterns:
    └── feature-2/
    ```
 
-2. **In subdirectory** (recommended): Organizes worktrees in a dedicated directory
+2. **Custom path**: Specify any relative path for flexible organization
 
    ```
-   parent/
-   └── my-repo/
-       └── worktrees/
-           ├── feature-1/
-           └── feature-2/
+   Examples:
+   - main              → ./main (for .bare pattern)
+   - branches/feature  → ./branches/feature
+   - ../feature        → ../feature (same as option 1)
    ```
 
-You can also create worktrees with custom paths:
+For bare repositories with the recommended `.bare` pattern:
 
-- `../feature`: Creates at the same level as the repository
-- `worktrees/feature`: Creates in a subdirectory
-- `branch/feature`: Creates in a custom subdirectory structure
+```
+my-project/
+├── .bare/          # Bare repository (git clone --bare <url> .bare)
+├── .git            # Pointer file (echo "gitdir: ./.bare" > .git)
+├── main/           # Worktree (created with custom path: "main")
+└── feature-1/      # Worktree (created with custom path: "feature-1")
+```
 
 ### Keyboard Shortcuts
 

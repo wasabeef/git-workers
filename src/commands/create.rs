@@ -16,9 +16,8 @@ use crate::constants::{
     OPTION_CUSTOM_PATH_FULL, OPTION_SELECT_BRANCH_FULL, OPTION_SELECT_TAG_FULL,
     PROGRESS_BAR_TICK_MILLIS, PROMPT_CONFLICT_ACTION, PROMPT_CUSTOM_PATH, PROMPT_SELECT_BRANCH,
     PROMPT_SELECT_BRANCH_OPTION, PROMPT_SELECT_TAG, PROMPT_SELECT_WORKTREE_LOCATION,
-    PROMPT_WORKTREE_NAME, REPO_NAME_FALLBACK, SLASH_CHAR, STRING_CUSTOM, STRING_SAME_LEVEL,
-    STRING_SUBDIRECTORY, TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREES_SUBDIR,
-    WORKTREE_LOCATION_CUSTOM_PATH, WORKTREE_LOCATION_SAME_LEVEL, WORKTREE_LOCATION_SUBDIRECTORY,
+    PROMPT_WORKTREE_NAME, SLASH_CHAR, STRING_CUSTOM, STRING_SAME_LEVEL,
+    TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREE_LOCATION_CUSTOM_PATH, WORKTREE_LOCATION_SAME_LEVEL,
 };
 use crate::file_copy;
 use crate::git::GitWorktreeManager;
@@ -53,7 +52,7 @@ pub enum BranchSource {
 /// Validate worktree location type
 pub fn validate_worktree_location(location: &str) -> Result<()> {
     match location {
-        STRING_SAME_LEVEL | STRING_SUBDIRECTORY | STRING_CUSTOM => Ok(()),
+        STRING_SAME_LEVEL | STRING_CUSTOM => Ok(()),
         _ => Err(anyhow!("Invalid worktree location type: {}", location)),
     }
 }
@@ -75,19 +74,6 @@ pub fn determine_worktree_path(
                 .join(name);
             Ok((path, STRING_SAME_LEVEL.to_string()))
         }
-        STRING_SUBDIRECTORY => {
-            let repo_name = git_dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(REPO_NAME_FALLBACK);
-            let path = git_dir
-                .parent()
-                .ok_or_else(|| anyhow!("Cannot determine parent directory"))?
-                .join(repo_name)
-                .join(WORKTREES_SUBDIR)
-                .join(name);
-            Ok((path, STRING_SUBDIRECTORY.to_string()))
-        }
         STRING_CUSTOM => {
             let path = custom_path
                 .ok_or_else(|| anyhow!("Custom path required when location is 'custom'"))?;
@@ -107,7 +93,6 @@ pub fn determine_worktree_path_legacy(
 ) -> Result<PathBuf> {
     match location_choice {
         WORKTREE_LOCATION_SAME_LEVEL => Ok(PathBuf::from(format!("../{name}"))),
-        WORKTREE_LOCATION_SUBDIRECTORY => Ok(PathBuf::from(format!("{WORKTREES_SUBDIR}/{name}"))),
         WORKTREE_LOCATION_CUSTOM_PATH => {
             let path = custom_path.ok_or_else(|| anyhow!("Custom path not provided"))?;
             validate_custom_path(path)?;
@@ -160,10 +145,9 @@ pub fn create_worktree() -> Result<bool> {
 ///
 /// # Path Handling
 ///
-/// For first-time worktree creation, offers three location patterns:
-/// 1. **Same level as repository** (`../name`): Creates worktrees as siblings to the main repository
-/// 2. **In subdirectory** (`worktrees/name`): Creates within repository structure (recommended)
-/// 3. **Custom path**: Allows users to specify any relative path, validated by `validate_custom_path()`
+/// For first-time worktree creation, offers two location patterns:
+/// 1. **Same level as repository** (`../name`): Creates worktrees as siblings to the repository
+/// 2. **Custom path**: Allows users to specify any relative path, validated by `validate_custom_path()`
 ///
 /// The chosen pattern is then used for subsequent worktrees when simple names
 /// are provided, ensuring consistent organization.
@@ -222,7 +206,7 @@ pub fn create_worktree_with_ui(
         println!("{msg}");
 
         // Get repository name for display
-        let repo_name = manager
+        let _repo_name = manager
             .repo()
             .workdir()
             .and_then(|p| p.file_name())
@@ -231,10 +215,6 @@ pub fn create_worktree_with_ui(
 
         let options = vec![
             format!("Same level as repository (../{})", name),
-            format!(
-                "In subdirectory ({}/{}/{})",
-                repo_name, WORKTREES_SUBDIR, name
-            ),
             OPTION_CUSTOM_PATH_FULL.to_string(),
         ];
 
@@ -249,7 +229,6 @@ pub fn create_worktree_with_ui(
 
         match selection {
             WORKTREE_LOCATION_SAME_LEVEL => format!("../{name}"), // Same level
-            WORKTREE_LOCATION_SUBDIRECTORY => format!("{WORKTREES_SUBDIR}/{name}"), // Subdirectory pattern
             WORKTREE_LOCATION_CUSTOM_PATH => {
                 // Custom path input
                 println!();
@@ -310,7 +289,7 @@ pub fn create_worktree_with_ui(
 
                 final_path
             }
-            _ => format!("{WORKTREES_SUBDIR}/{name}"), // Default fallback
+            _ => format!("../{name}"), // Default fallback
         }
     } else {
         name.clone()
@@ -729,7 +708,6 @@ mod tests {
     fn test_validate_worktree_location_valid() {
         // Test valid location types
         assert!(validate_worktree_location("same-level").is_ok());
-        assert!(validate_worktree_location("subdirectory").is_ok());
         assert!(validate_worktree_location("custom").is_ok());
     }
 
@@ -752,21 +730,6 @@ mod tests {
 
         let (path, pattern) = result.unwrap();
         assert_eq!(pattern, "same-level");
-        assert!(path.to_string_lossy().ends_with("test-worktree"));
-    }
-
-    #[test]
-    fn test_determine_worktree_path_subdirectory() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_dir = temp_dir.path().join("project");
-        std::fs::create_dir_all(&git_dir).unwrap();
-
-        let result = determine_worktree_path(&git_dir, "test-worktree", "subdirectory", None);
-        assert!(result.is_ok());
-
-        let (path, pattern) = result.unwrap();
-        assert_eq!(pattern, "subdirectory");
-        assert!(path.to_string_lossy().contains("worktrees"));
         assert!(path.to_string_lossy().ends_with("test-worktree"));
     }
 
@@ -797,15 +760,6 @@ mod tests {
         assert!(result.is_ok());
         let path = result.unwrap();
         assert_eq!(path, PathBuf::from("../test"));
-    }
-
-    #[test]
-    fn test_determine_worktree_path_legacy_subdirectory() {
-        let result =
-            determine_worktree_path_legacy("test", WORKTREE_LOCATION_SUBDIRECTORY, None, "repo");
-        assert!(result.is_ok());
-        let path = result.unwrap();
-        assert_eq!(path, PathBuf::from("worktrees/test"));
     }
 
     #[test]
@@ -883,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_validate_worktree_location_all_valid() {
-        let valid_locations = vec!["same-level", "subdirectory", "custom"];
+        let valid_locations = vec!["same-level", "custom"];
         for location in valid_locations {
             assert!(validate_worktree_location(location).is_ok());
         }
@@ -895,22 +849,6 @@ mod tests {
         let result =
             determine_worktree_path_legacy("test", WORKTREE_LOCATION_CUSTOM_PATH, None, repo_name);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_determine_worktree_path_subdirectory_repo_name() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let git_dir = temp_dir.path().join("my-project");
-        std::fs::create_dir_all(&git_dir).unwrap();
-
-        let result = determine_worktree_path(&git_dir, "feature", "subdirectory", None);
-        assert!(result.is_ok());
-
-        let (path, pattern) = result.unwrap();
-        assert_eq!(pattern, "subdirectory");
-        assert!(path.to_string_lossy().contains("my-project"));
-        assert!(path.to_string_lossy().contains("worktrees"));
-        assert!(path.to_string_lossy().contains("feature"));
     }
 
     #[test]
