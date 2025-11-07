@@ -79,8 +79,7 @@ fn test_hook_constants() {
 fn test_numeric_constants() {
     assert_eq!(DEFAULT_MENU_SELECTION, 0);
     assert_eq!(WORKTREE_LOCATION_SAME_LEVEL, 0);
-    assert_eq!(WORKTREE_LOCATION_SUBDIRECTORY, 1);
-    assert_eq!(WORKTREE_LOCATION_CUSTOM_PATH, 2);
+    assert_eq!(WORKTREE_LOCATION_CUSTOM_PATH, 1);
     assert_eq!(COMMIT_ID_SHORT_LENGTH, 8);
     assert_eq!(TAG_MESSAGE_TRUNCATE_LENGTH, 50);
 }

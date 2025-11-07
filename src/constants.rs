@@ -444,8 +444,7 @@ pub const WINDOW_SIZE_PAIRS: usize = 2;
 
 // Worktree location pattern indices
 pub const WORKTREE_LOCATION_SAME_LEVEL: usize = 0;
-pub const WORKTREE_LOCATION_SUBDIRECTORY: usize = 1;
-pub const WORKTREE_LOCATION_CUSTOM_PATH: usize = 2;
+pub const WORKTREE_LOCATION_CUSTOM_PATH: usize = 1;
 
 // Branch option indices
 pub const BRANCH_OPTION_CREATE_FROM_HEAD: usize = 0;
@@ -670,7 +669,6 @@ pub const TEST_GIT_REFS: &str = "refs";
 
 // Hardcoded string values from create.rs
 pub const STRING_SAME_LEVEL: &str = "same-level";
-pub const STRING_SUBDIRECTORY: &str = "subdirectory";
 pub const STRING_CUSTOM: &str = "custom";
 pub const ERROR_INVALID_WORKTREE_LOCATION: &str = "Invalid worktree location type: {}";
 pub const ERROR_CUSTOM_PATH_REQUIRED: &str = "Custom path required when location is 'custom'";

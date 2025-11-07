@@ -181,8 +181,12 @@ Template variables:
 
 First worktree creation offers two options:
 
-1. Same level as repository: `../worktree-name`
-2. In subdirectory (recommended): `../repo/worktrees/worktree-name`
+1. **Same level as repository**: `../worktree-name` - Creates worktrees as siblings to the repository
+2. **Custom path**: User specifies any relative path (e.g., `main`, `branches/feature`, `worktrees/name`)
+
+For bare repositories with `.bare` pattern, use custom path to create worktrees inside the project directory:
+- Custom path: `main` → `my-project/main/`
+- Custom path: `feature-1` → `my-project/feature-1/`
 
 Subsequent worktrees follow the established pattern automatically.
 

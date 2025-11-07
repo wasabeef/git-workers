@@ -22,7 +22,7 @@ fn test_custom_path_appends_worktree_name() -> Result<()> {
     // Test case 1: "branch/" -> "branch/feature-x"
     let ui = TestUI::new()
         .with_input("feature-x") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("branch/") // directory path
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -49,7 +49,7 @@ fn test_dot_slash_creates_in_project_root() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("my-feature") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("./") // current directory
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -78,7 +78,7 @@ fn test_parent_directory_creates_outside_project() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("external-feature") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("../") // parent directory
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -111,7 +111,7 @@ fn test_nested_directory_paths() -> Result<()> {
     // Test case: "features/ui/" -> "features/ui/button"
     let ui = TestUI::new()
         .with_input("button") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("features/ui/") // nested directory
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -138,7 +138,7 @@ fn test_path_without_trailing_slash_treated_as_directory() -> Result<()> {
     // "hotfix" (no slash) should behave like "hotfix/"
     let ui = TestUI::new()
         .with_input("urgent-fix") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("hotfix") // no trailing slash
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -164,7 +164,7 @@ fn test_empty_path_uses_worktree_name_only() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("simple") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("") // empty path
         .with_error(); // should error on empty path
 
@@ -189,7 +189,7 @@ fn test_path_validation_prevents_dangerous_paths() -> Result<()> {
     // Test absolute path (should fail)
     let ui = TestUI::new()
         .with_input("test") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("/tmp/evil") // absolute path
         .with_error(); // should error
 
@@ -199,7 +199,7 @@ fn test_path_validation_prevents_dangerous_paths() -> Result<()> {
     // Test path traversal (should fail)
     let ui = TestUI::new()
         .with_input("test")
-        .with_selection(2)
+        .with_selection(1)
         .with_input("../../../../../../etc") // path traversal
         .with_error();
 
@@ -222,7 +222,7 @@ fn test_single_slash_becomes_worktree_name() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("root-level") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("/") // just a slash
         .with_selection(0) // create from HEAD
         .with_confirmation(false); // don't switch
@@ -249,7 +249,7 @@ fn test_custom_path_with_branch_selection() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("branch-feature") // worktree name
-        .with_selection(2) // custom path option
+        .with_selection(1) // custom path option
         .with_input("branches/") // directory for branches
         .with_selection(1) // select branch
         .with_selection(0) // select first branch (test-branch)
@@ -289,7 +289,7 @@ fn test_ui_examples_are_accurate() -> Result<()> {
 
         let ui = TestUI::new()
             .with_input(name) // worktree name
-            .with_selection(2) // custom path option
+            .with_selection(1) // custom path option
             .with_input(input) // directory path
             .with_selection(0) // create from HEAD
             .with_confirmation(false); // don't switch
@@ -323,7 +323,7 @@ fn test_custom_path_for_subsequent_worktrees() -> Result<()> {
     // Create first worktree with custom path
     let ui = TestUI::new()
         .with_input("first")
-        .with_selection(2) // custom path
+        .with_selection(1) // custom path
         .with_input("work/")
         .with_selection(0)
         .with_confirmation(false);
@@ -333,7 +333,7 @@ fn test_custom_path_for_subsequent_worktrees() -> Result<()> {
     // Create second worktree (should still offer custom path option)
     let ui = TestUI::new()
         .with_input("second")
-        .with_selection(2) // custom path should still be available
+        .with_selection(1) // custom path should still be available
         .with_input("work/") // same directory
         .with_selection(0)
         .with_confirmation(false);
@@ -358,7 +358,7 @@ fn test_single_dot_behaves_like_dot_slash() -> Result<()> {
 
     let ui = TestUI::new()
         .with_input("dot-test")
-        .with_selection(2) // custom path
+        .with_selection(1) // custom path
         .with_input(".") // just a dot
         .with_selection(0)
         .with_confirmation(false);
@@ -425,7 +425,7 @@ mod validation_tests {
         // Test trailing slashes are handled
         let ui = TestUI::new()
             .with_input("test")
-            .with_selection(2)
+            .with_selection(1)
             .with_input("path/with/trailing/////") // Multiple trailing slashes
             .with_selection(0)
             .with_confirmation(false);
