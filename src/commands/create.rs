@@ -8,7 +8,7 @@ use super::super::core::{validate_custom_path, validate_worktree_name};
 use crate::config::Config;
 use crate::constants::{
     section_header, BRANCH_OPTION_SELECT_BRANCH, BRANCH_OPTION_SELECT_TAG, DEFAULT_EMPTY_STRING,
-    DEFAULT_MENU_SELECTION, DEFAULT_REPO_NAME, ERROR_CUSTOM_PATH_EMPTY, ERROR_WORKTREE_NAME_EMPTY,
+    DEFAULT_MENU_SELECTION, ERROR_CUSTOM_PATH_EMPTY, ERROR_WORKTREE_NAME_EMPTY,
     FUZZY_SEARCH_THRESHOLD, GIT_REMOTE_PREFIX, HEADER_CREATE_WORKTREE, HOOK_POST_CREATE,
     HOOK_POST_SWITCH, ICON_LOCAL_BRANCH, ICON_REMOTE_BRANCH, ICON_TAG_INDICATOR,
     MSG_EXAMPLE_BRANCH, MSG_EXAMPLE_DOT, MSG_EXAMPLE_HOTFIX, MSG_EXAMPLE_PARENT,
@@ -205,14 +205,6 @@ pub fn create_worktree_with_ui(
         let msg = MSG_FIRST_WORKTREE_CHOOSE.bright_cyan();
         println!("{msg}");
 
-        // Get repository name for display
-        let _repo_name = manager
-            .repo()
-            .workdir()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .unwrap_or(DEFAULT_REPO_NAME);
-
         let options = vec![
             format!("Same level as repository (../{})", name),
             OPTION_CUSTOM_PATH_FULL.to_string(),
@@ -289,7 +281,13 @@ pub fn create_worktree_with_ui(
 
                 final_path
             }
-            _ => format!("../{name}"), // Default fallback
+            _ => {
+                // This should never happen with only 2 menu options
+                utils::print_error(&format!(
+                    "Invalid location selection: {selection}. Expected 0 or 1."
+                ));
+                return Ok(false);
+            }
         }
     } else {
         name.clone()
