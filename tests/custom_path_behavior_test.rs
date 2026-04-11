@@ -7,6 +7,8 @@
 
 use anyhow::Result;
 use git_workers::commands::create_worktree_with_ui;
+use std::fs;
+use std::process::Command;
 use tempfile::TempDir;
 
 mod common;
@@ -266,6 +268,74 @@ fn test_custom_path_with_branch_selection() -> Result<()> {
     assert!(worktree.path.ends_with("branches/branch-feature"));
     // New branch was created with worktree name, not using test-branch directly
     assert_eq!(worktree.branch, "branch-feature");
+
+    Ok(())
+}
+
+/// Test that tag selection creates a new branch named after the worktree
+#[test]
+fn test_custom_path_with_tag_selection() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let test_repo = TestRepo::new(&temp_dir)?;
+    let manager = test_repo.manager()?;
+
+    Command::new("git")
+        .args(["tag", "v1.2.3"])
+        .current_dir(test_repo.path())
+        .output()?;
+
+    let ui = TestUI::new()
+        .with_input("release-preview") // worktree name
+        .with_selection(1) // custom path option
+        .with_input("releases/") // directory for tagged releases
+        .with_selection(2) // select tag
+        .with_selection(0) // select the first tag
+        .with_confirmation(false); // don't switch
+
+    let result = create_worktree_with_ui(&manager, &ui)?;
+    assert!(!result);
+
+    let worktrees = manager.list_worktrees()?;
+    let worktree = worktrees
+        .iter()
+        .find(|w| w.name == "release-preview")
+        .expect("release-preview worktree should exist");
+
+    assert!(worktree.path.ends_with("releases/release-preview"));
+    assert_eq!(worktree.branch, "release-preview");
+
+    Ok(())
+}
+
+/// Test that opting into switch writes the selected path for shell integration
+#[test]
+fn test_create_worktree_with_switch_writes_switch_file() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let test_repo = TestRepo::new(&temp_dir)?;
+    let manager = test_repo.manager()?;
+
+    let switch_file = temp_dir.path().join("switch-target.txt");
+    std::env::set_var("GW_SWITCH_FILE", &switch_file);
+
+    let ui = TestUI::new()
+        .with_input("switch-target") // worktree name
+        .with_selection(0) // same level as repository
+        .with_selection(0) // create from HEAD
+        .with_confirmation(true); // switch to new worktree
+
+    let result = create_worktree_with_ui(&manager, &ui)?;
+    std::env::remove_var("GW_SWITCH_FILE");
+
+    assert!(result);
+
+    let worktrees = manager.list_worktrees()?;
+    let worktree = worktrees
+        .iter()
+        .find(|w| w.name == "switch-target")
+        .expect("switch-target worktree should exist");
+
+    let switch_target = fs::read_to_string(&switch_file)?;
+    assert_eq!(switch_target.trim(), worktree.path.to_string_lossy());
 
     Ok(())
 }

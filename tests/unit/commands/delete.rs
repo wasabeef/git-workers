@@ -4,11 +4,58 @@
 //! including removal confirmation and cleanup operations.
 
 use anyhow::Result;
-use git_workers::commands::WorktreeDeleteConfig;
+use git_workers::commands::{delete_worktree_with_ui, execute_deletion, WorktreeDeleteConfig};
+use git_workers::git::GitWorktreeManager;
 use git_workers::infrastructure::git::WorktreeInfo;
+use git_workers::ui::MockUI;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+fn setup_test_repo() -> Result<(TempDir, GitWorktreeManager)> {
+    let temp_dir = TempDir::new()?;
+
+    std::process::Command::new("git")
+        .arg("init")
+        .current_dir(temp_dir.path())
+        .output()?;
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(temp_dir.path())
+        .output()?;
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(temp_dir.path())
+        .output()?;
+
+    fs::write(temp_dir.path().join("README.md"), "# Test")?;
+    std::process::Command::new("git")
+        .arg("add")
+        .arg("README.md")
+        .current_dir(temp_dir.path())
+        .output()?;
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(temp_dir.path())
+        .output()?;
+    std::process::Command::new("git")
+        .args(["branch", "-m", "main"])
+        .current_dir(temp_dir.path())
+        .output()?;
+
+    let manager = GitWorktreeManager::new_from_path(temp_dir.path())?;
+    Ok((temp_dir, manager))
+}
+
+fn unique_name(prefix: &str) -> String {
+    format!(
+        "{prefix}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    )
+}
 
 #[test]
 fn test_worktree_delete_config_creation() {
@@ -27,47 +74,39 @@ fn test_worktree_delete_config_creation() {
 
 // Integration test for actual deletion
 #[test]
-fn test_worktree_deletion_simulation() -> Result<()> {
-    let temp_dir = TempDir::new()?;
+fn test_execute_deletion_removes_worktree_and_branch() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_repo()?;
+    let name = unique_name("delete-me");
+    let worktree_path = manager.create_worktree_with_new_branch(&name, &name, "main")?;
 
-    // Initialize repository
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(temp_dir.path())
-        .output()?;
+    let config = WorktreeDeleteConfig {
+        name: name.clone(),
+        path: worktree_path.clone(),
+        branch: name.clone(),
+        delete_branch: true,
+    };
 
-    // Create initial commit
-    fs::write(temp_dir.path().join("README.md"), "# Test")?;
-    std::process::Command::new("git")
-        .arg("add")
-        .arg(".")
-        .current_dir(temp_dir.path())
-        .output()?;
-    std::process::Command::new("git")
-        .arg("commit")
-        .arg("-m")
-        .arg("Initial commit")
-        .current_dir(temp_dir.path())
-        .output()?;
+    execute_deletion(&config, &manager)?;
 
-    // Create a worktree
-    let worktree_path = temp_dir.path().join("../feature");
-    std::process::Command::new("git")
-        .args([
-            "worktree",
-            "add",
-            worktree_path.to_str().unwrap(),
-            "-b",
-            "feature",
-        ])
-        .current_dir(temp_dir.path())
-        .output()?;
+    assert!(!worktree_path.exists());
 
-    // Verify worktree exists
-    assert!(worktree_path.exists());
+    let (local_branches, _) = manager.list_all_branches()?;
+    assert!(!local_branches.contains(&name));
 
-    // Test would validate deletion target if API was public
-    // assert!(validate_deletion_target("feature").is_ok());
+    Ok(())
+}
+
+#[test]
+fn test_delete_worktree_with_ui_cancel_keeps_worktree() -> Result<()> {
+    let (_temp_dir, manager) = setup_test_repo()?;
+    let name = unique_name("delete-cancel");
+    manager.create_worktree_with_new_branch(&name, &name, "main")?;
+
+    let ui = MockUI::new().with_selection(0);
+    delete_worktree_with_ui(&manager, &ui)?;
+
+    let worktrees = manager.list_worktrees()?;
+    assert!(worktrees.iter().any(|w| w.name == name));
 
     Ok(())
 }

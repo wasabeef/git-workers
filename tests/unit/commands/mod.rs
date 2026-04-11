@@ -13,7 +13,9 @@ use anyhow::Result;
 use git_workers::commands::{find_config_file_path, get_worktree_icon, validate_custom_path};
 use git_workers::constants;
 use git_workers::infrastructure::git::{GitWorktreeManager, WorktreeInfo};
+use serial_test::serial;
 use std::fs;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 // ============================================================================
@@ -45,6 +47,15 @@ fn setup_non_bare_repo() -> Result<(TempDir, GitWorktreeManager)> {
         .current_dir(temp_dir.path())
         .output()?;
 
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(temp_dir.path())
+        .output()?;
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(temp_dir.path())
+        .output()?;
+
     // Create initial commit
     fs::write(temp_dir.path().join("README.md"), "# Test")?;
     std::process::Command::new("git")
@@ -61,6 +72,24 @@ fn setup_non_bare_repo() -> Result<(TempDir, GitWorktreeManager)> {
 
     let manager = GitWorktreeManager::new_from_path(temp_dir.path())?;
     Ok((temp_dir, manager))
+}
+
+struct CurrentDirGuard {
+    original: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn change_to(path: &Path) -> Result<Self> {
+        let original = std::env::current_dir()?;
+        std::env::set_current_dir(path)?;
+        Ok(Self { original })
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
+    }
 }
 
 // ============================================================================
@@ -149,41 +178,34 @@ fn test_get_worktree_icon_locked() -> Result<()> {
 // ============================================================================
 
 #[test]
-#[ignore = "Test requires isolated environment to avoid finding project config"]
-fn test_find_config_file_path_in_bare_repo() -> Result<()> {
+#[serial]
+fn test_find_config_file_path_defaults_to_current_bare_repo_directory() -> Result<()> {
     let (temp_dir, manager) = setup_test_repo()?;
-
-    // Create main worktree
-    let main_path = temp_dir.path().join("main");
-    fs::create_dir_all(&main_path)?;
-
-    // Create config file in main worktree
-    let config_path = main_path.join(".git-workers.toml");
-    fs::write(&config_path, "[worktree]\npattern = \"subdirectory\"")?;
-
-    // Update git config to point to main worktree
-    std::process::Command::new("git")
-        .args(["config", "core.worktree", main_path.to_str().unwrap()])
-        .current_dir(temp_dir.path())
-        .output()?;
+    let _guard = CurrentDirGuard::change_to(temp_dir.path())?;
 
     let found_path = find_config_file_path(&manager)?;
-    assert_eq!(found_path, config_path);
+    assert_eq!(
+        found_path,
+        std::env::current_dir()?.join(".git-workers.toml")
+    );
 
     Ok(())
 }
 
 #[test]
-#[ignore = "Test requires isolated environment to avoid finding project config"]
-fn test_find_config_file_path_in_worktree() -> Result<()> {
+#[serial]
+fn test_find_config_file_path_prefers_current_worktree_directory() -> Result<()> {
     let (temp_dir, _manager) = setup_non_bare_repo()?;
 
-    // Create config file in repository root
-    let config_path = temp_dir.path().join(".git-workers.toml");
-    fs::write(&config_path, "[worktree]\npattern = \"same-level\"")?;
+    fs::write(
+        temp_dir.path().join(".git-workers.toml"),
+        "[worktree]\npattern = \"same-level\"",
+    )?;
 
-    // Create a worktree
-    let worktree_path = temp_dir.path().join("../feature");
+    let worktree_path = temp_dir.path().parent().unwrap().join(format!(
+        "{}-feature",
+        temp_dir.path().file_name().unwrap().to_string_lossy()
+    ));
     std::process::Command::new("git")
         .args([
             "worktree",
@@ -195,9 +217,11 @@ fn test_find_config_file_path_in_worktree() -> Result<()> {
         .current_dir(temp_dir.path())
         .output()?;
 
+    let worktree_path = worktree_path.canonicalize()?;
+    let _guard = CurrentDirGuard::change_to(&worktree_path)?;
     let manager = GitWorktreeManager::new_from_path(&worktree_path)?;
     let found_path = find_config_file_path(&manager)?;
-    assert_eq!(found_path, config_path);
+    assert_eq!(found_path, worktree_path.join(".git-workers.toml"));
 
     Ok(())
 }

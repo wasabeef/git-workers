@@ -67,18 +67,6 @@ fn test_path_operations() {
 }
 
 #[test]
-fn test_confirm_action() {
-    // This function requires user input, so we can't test it directly
-    // We would need to mock the dialoguer library for proper testing
-}
-
-#[test]
-fn test_press_any_key_to_continue() {
-    // This function waits for user input, so we can't test it directly
-    // We would need to mock stdin for proper testing
-}
-
-#[test]
 fn test_terminal_operations() {
     // Test that terminal functions exist and can be created
     // Note: get_terminal() now returns Term::stderr() without validation
