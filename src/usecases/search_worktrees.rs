@@ -9,7 +9,7 @@ use crate::constants::{
     MSG_NO_WORKTREES_TO_SEARCH, MSG_SEARCH_FUZZY_ENABLED, PROMPT_SELECT_WORKTREE_SWITCH,
     SEARCH_CURRENT_INDICATOR,
 };
-use crate::domain::worktree::WorktreeInfo;
+use crate::domain::worktree::{BasicWorktreeInfo, WorktreeInfo};
 use crate::utils::{self, get_theme, press_any_key_to_continue};
 
 #[derive(Debug, Clone)]
@@ -23,6 +23,23 @@ pub struct SearchAnalysis {
     pub items: Vec<String>,
     pub total_count: usize,
     pub has_current: bool,
+}
+
+fn lightweight_worktrees_to_display(worktrees: Vec<BasicWorktreeInfo>) -> Vec<WorktreeInfo> {
+    worktrees
+        .into_iter()
+        .map(|worktree| WorktreeInfo {
+            name: worktree.name,
+            git_name: worktree.git_name,
+            path: worktree.path,
+            branch: worktree.branch,
+            is_locked: worktree.is_locked,
+            is_current: worktree.is_current,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+        })
+        .collect()
 }
 
 pub fn create_search_items(worktrees: &[WorktreeInfo]) -> SearchAnalysis {
@@ -63,7 +80,7 @@ pub fn search_worktrees() -> Result<bool> {
 }
 
 fn search_worktrees_internal(manager: &GitWorktreeManager) -> Result<bool> {
-    let worktrees = manager.list_worktrees()?;
+    let worktrees = lightweight_worktrees_to_display(manager.list_worktrees_basic()?);
 
     if worktrees.is_empty() {
         println!();

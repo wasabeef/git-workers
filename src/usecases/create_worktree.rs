@@ -85,8 +85,7 @@ pub fn create_worktree_with_ui(
     println!("{header}");
     println!();
 
-    let existing_worktrees = manager.list_worktrees()?;
-    let has_worktrees = !existing_worktrees.is_empty();
+    let has_linked_worktrees = manager.has_linked_worktrees()?;
 
     let name = match ui.input(PROMPT_WORKTREE_NAME) {
         Ok(name) => name.trim().to_string(),
@@ -106,7 +105,7 @@ pub fn create_worktree_with_ui(
         }
     };
 
-    let final_name = if !has_worktrees {
+    let final_name = if !has_linked_worktrees {
         println!();
         let msg = MSG_FIRST_WORKTREE_CHOOSE.bright_cyan();
         println!("{msg}");

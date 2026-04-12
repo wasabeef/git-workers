@@ -293,6 +293,65 @@ impl GitWorktreeManager {
         Ok(worktrees)
     }
 
+    /// Returns whether the repository has any linked worktrees.
+    ///
+    /// This intentionally does not count the main worktree. Its semantics must
+    /// stay aligned with `list_worktrees()` and the `create` first-worktree flow.
+    pub fn has_linked_worktrees(&self) -> Result<bool> {
+        let worktree_names = self.repo.worktrees()?;
+        Ok(worktree_names.iter().flatten().next().is_some())
+    }
+
+    /// Lists linked worktrees without loading status or commit metadata.
+    ///
+    /// This preserves the same ordering and identity fields as `list_worktrees()`,
+    /// but avoids the expensive per-worktree status scan used by detailed views.
+    pub fn list_worktrees_basic(&self) -> Result<Vec<BasicWorktreeInfo>> {
+        let mut worktrees = Vec::new();
+        let worktree_names = self.repo.worktrees()?;
+
+        for name in worktree_names.iter().flatten() {
+            if let Ok(worktree) = self.repo.find_worktree(name) {
+                let path = worktree.path();
+                let is_current = self.is_current_worktree(path);
+                let is_locked = worktree.is_locked().is_ok();
+
+                let branch = if let Ok(wt_repo) = Repository::open(path) {
+                    if let Ok(head) = wt_repo.head() {
+                        if let Some(shorthand) = head.shorthand() {
+                            shorthand.to_string()
+                        } else {
+                            String::from(DEFAULT_BRANCH_DETACHED)
+                        }
+                    } else {
+                        String::from(DEFAULT_BRANCH_DETACHED)
+                    }
+                } else {
+                    String::from(DEFAULT_BRANCH_UNKNOWN)
+                };
+
+                let display_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(name)
+                    .to_string();
+
+                worktrees.push(BasicWorktreeInfo {
+                    name: display_name,
+                    git_name: name.to_string(),
+                    path: path.to_path_buf(),
+                    branch,
+                    is_locked,
+                    is_current,
+                });
+            }
+        }
+
+        worktrees.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(worktrees)
+    }
+
     /// Checks if the given path is the current worktree
     ///
     /// # Arguments
@@ -1158,7 +1217,7 @@ impl GitWorktreeManager {
         branch_name: &str,
         worktree_name: &str,
     ) -> Result<bool> {
-        let worktrees = self.list_worktrees()?;
+        let worktrees = self.list_worktrees_basic()?;
         let mut count = 0;
         let mut found_in_target = false;
 
@@ -1581,6 +1640,26 @@ pub struct WorktreeInfo {
     /// Number of commits ahead and behind the upstream branch
     #[allow(dead_code)]
     pub ahead_behind: Option<(usize, usize)>, // (ahead, behind)
+}
+
+/// Lightweight information about a Git worktree.
+///
+/// This keeps only the fields needed for selection UIs and identity resolution,
+/// without opening each worktree to inspect status or commit metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BasicWorktreeInfo {
+    /// The display name of the worktree (derived from the directory name)
+    pub name: String,
+    /// The internal Git name of the worktree (from .git/worktrees/)
+    pub git_name: String,
+    /// The absolute filesystem path to the worktree
+    pub path: PathBuf,
+    /// The current branch name or "detached" if in detached HEAD state
+    pub branch: String,
+    /// Whether the worktree is locked (prevents deletion)
+    pub is_locked: bool,
+    /// Whether this is the currently active worktree
+    pub is_current: bool,
 }
 
 /// Information about a Git commit

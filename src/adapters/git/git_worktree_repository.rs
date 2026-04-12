@@ -1,1 +1,3 @@
-pub use crate::infrastructure::git::{CommitInfo, GitWorktreeManager, WorktreeInfo};
+pub use crate::infrastructure::git::{
+    BasicWorktreeInfo, CommitInfo, GitWorktreeManager, WorktreeInfo,
+};
