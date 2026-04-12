@@ -134,6 +134,15 @@ fn test_list_worktrees_with_main() -> Result<()> {
 }
 
 #[test]
+fn test_has_linked_worktrees_ignores_main_worktree() -> Result<()> {
+    let (_temp_dir, manager) = setup_repo_with_commit()?;
+
+    assert!(!manager.has_linked_worktrees()?);
+
+    Ok(())
+}
+
+#[test]
 fn test_list_worktrees_multiple() -> Result<()> {
     let (_temp_dir, manager) = setup_repo_with_commit()?;
 
@@ -157,6 +166,78 @@ fn test_list_worktrees_multiple() -> Result<()> {
     let names: Vec<&str> = worktrees.iter().map(|w| w.name.as_str()).collect();
     assert!(names.contains(&feature_name.as_str()));
     assert!(names.contains(&bugfix_name.as_str()));
+
+    Ok(())
+}
+
+#[test]
+fn test_list_worktrees_basic_matches_full_fields_and_order() -> Result<()> {
+    let (_temp_dir, manager) = setup_repo_with_commit()?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let alpha_name = format!("alpha-{timestamp}");
+    let beta_name = format!("beta-{timestamp}");
+
+    manager.create_worktree_with_new_branch(&beta_name, &beta_name, "main")?;
+    manager.create_worktree_with_new_branch(&alpha_name, &alpha_name, "main")?;
+
+    let basic = manager.list_worktrees_basic()?;
+    let full = manager.list_worktrees()?;
+
+    assert_eq!(basic.len(), full.len());
+
+    for (basic_info, full_info) in basic.iter().zip(full.iter()) {
+        assert_eq!(basic_info.name, full_info.name);
+        assert_eq!(basic_info.git_name, full_info.git_name);
+        assert_eq!(basic_info.path, full_info.path);
+        assert_eq!(basic_info.branch, full_info.branch);
+        assert_eq!(basic_info.is_current, full_info.is_current);
+        assert_eq!(basic_info.is_locked, full_info.is_locked);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_list_worktrees_basic_preserves_renamed_identity() -> Result<()> {
+    let (_temp_dir, manager) = setup_repo_with_commit()?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let original_name = format!("original-{timestamp}");
+    let branch_name = format!("branch-{timestamp}");
+    let renamed_name = format!("renamed-{timestamp}");
+
+    manager.create_worktree_with_new_branch(&original_name, &branch_name, "main")?;
+    manager.rename_worktree(&original_name, &renamed_name)?;
+
+    let basic = manager.list_worktrees_basic()?;
+    let renamed = basic
+        .iter()
+        .find(|w| w.name == renamed_name)
+        .expect("renamed worktree should exist in basic listing");
+
+    assert_eq!(renamed.git_name, original_name);
+    assert_eq!(renamed.branch, branch_name);
+
+    Ok(())
+}
+
+#[test]
+fn test_has_linked_worktrees_detects_linked_worktree() -> Result<()> {
+    let (_temp_dir, manager) = setup_repo_with_commit()?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
+    let worktree_name = format!("linked-{timestamp}");
+
+    manager.create_worktree_with_new_branch(&worktree_name, &worktree_name, "main")?;
+
+    assert!(manager.has_linked_worktrees()?);
 
     Ok(())
 }

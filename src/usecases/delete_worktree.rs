@@ -5,7 +5,7 @@ use dialoguer::{Confirm, MultiSelect};
 use crate::adapters::git::GitWorktreeManager;
 use crate::adapters::hooks::{self, HookContext};
 use crate::constants::{section_header, DEFAULT_MENU_SELECTION, HOOK_PRE_REMOVE};
-use crate::domain::worktree::WorktreeInfo;
+use crate::domain::worktree::{BasicWorktreeInfo, WorktreeInfo};
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, get_theme, press_any_key_to_continue};
 
@@ -64,6 +64,20 @@ pub fn get_deletable_worktrees(worktrees: &[WorktreeInfo]) -> Vec<&WorktreeInfo>
 
 /// Pure business logic for filtering deletable worktrees for batch operations
 pub fn prepare_batch_delete_items(worktrees: &[WorktreeInfo]) -> Vec<String> {
+    worktrees
+        .iter()
+        .filter(|w| !w.is_current)
+        .map(|w| format!("{} ({})", w.name, w.branch))
+        .collect()
+}
+
+/// Pure business logic for filtering deletable worktrees for batch operations.
+pub fn get_deletable_worktrees_basic(worktrees: &[BasicWorktreeInfo]) -> Vec<&BasicWorktreeInfo> {
+    worktrees.iter().filter(|w| !w.is_current).collect()
+}
+
+/// Pure business logic for preparing batch delete labels from lightweight worktrees.
+pub fn prepare_batch_delete_items_basic(worktrees: &[BasicWorktreeInfo]) -> Vec<String> {
     worktrees
         .iter()
         .filter(|w| !w.is_current)
@@ -238,7 +252,7 @@ pub fn batch_delete_worktrees() -> Result<()> {
 }
 
 fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
-    let worktrees = manager.list_worktrees()?;
+    let worktrees = manager.list_worktrees_basic()?;
 
     if worktrees.is_empty() {
         println!();
@@ -249,8 +263,7 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
         return Ok(());
     }
 
-    let deletable_worktrees: Vec<&WorktreeInfo> =
-        worktrees.iter().filter(|w| !w.is_current).collect();
+    let deletable_worktrees = get_deletable_worktrees_basic(&worktrees);
 
     if deletable_worktrees.is_empty() {
         println!();
@@ -270,7 +283,7 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
     println!("{header}");
     println!();
 
-    let items = prepare_batch_delete_items(&worktrees);
+    let items = prepare_batch_delete_items_basic(&worktrees);
 
     let selections = MultiSelect::with_theme(&get_theme())
         .with_prompt(
@@ -284,7 +297,7 @@ fn batch_delete_worktrees_internal(manager: &GitWorktreeManager) -> Result<()> {
         _ => return Ok(()),
     };
 
-    let selected_worktrees: Vec<&WorktreeInfo> =
+    let selected_worktrees: Vec<&BasicWorktreeInfo> =
         selections.iter().map(|&i| deletable_worktrees[i]).collect();
 
     let mut branches_to_delete = Vec::new();
@@ -572,5 +585,67 @@ mod tests {
         assert!(items[0].contains("feature-branch"));
         assert!(items[0].contains("feature/test"));
         assert!(!items[0].contains("main"));
+    }
+
+    #[test]
+    fn test_prepare_batch_delete_items_basic_preserves_order_and_filters_current() {
+        let worktrees = vec![
+            BasicWorktreeInfo {
+                name: "z-current".to_string(),
+                git_name: "z-current".to_string(),
+                path: std::path::PathBuf::from("/test/z-current"),
+                branch: "main".to_string(),
+                is_current: true,
+                is_locked: false,
+            },
+            BasicWorktreeInfo {
+                name: "alpha".to_string(),
+                git_name: "alpha".to_string(),
+                path: std::path::PathBuf::from("/test/alpha"),
+                branch: "alpha".to_string(),
+                is_current: false,
+                is_locked: false,
+            },
+            BasicWorktreeInfo {
+                name: "beta-renamed".to_string(),
+                git_name: "beta-original".to_string(),
+                path: std::path::PathBuf::from("/test/beta-renamed"),
+                branch: "beta-branch".to_string(),
+                is_current: false,
+                is_locked: false,
+            },
+        ];
+
+        let items = prepare_batch_delete_items_basic(&worktrees);
+
+        assert_eq!(items, vec!["alpha (alpha)", "beta-renamed (beta-branch)"]);
+    }
+
+    #[test]
+    fn test_get_deletable_worktrees_basic_preserves_identity_mapping() {
+        let worktrees = vec![
+            BasicWorktreeInfo {
+                name: "main".to_string(),
+                git_name: "main".to_string(),
+                path: std::path::PathBuf::from("/test/main"),
+                branch: "main".to_string(),
+                is_current: true,
+                is_locked: false,
+            },
+            BasicWorktreeInfo {
+                name: "renamed-feature".to_string(),
+                git_name: "feature-original".to_string(),
+                path: std::path::PathBuf::from("/test/renamed-feature"),
+                branch: "feature-branch".to_string(),
+                is_current: false,
+                is_locked: false,
+            },
+        ];
+
+        let deletable = get_deletable_worktrees_basic(&worktrees);
+
+        assert_eq!(deletable.len(), 1);
+        assert_eq!(deletable[0].name, "renamed-feature");
+        assert_eq!(deletable[0].git_name, "feature-original");
     }
 }

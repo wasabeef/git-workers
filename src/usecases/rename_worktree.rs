@@ -6,7 +6,7 @@ use crate::constants::{
     section_header, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MENU_SELECTION,
 };
 use crate::domain::validation::validate_worktree_name;
-use crate::domain::worktree::WorktreeInfo;
+use crate::domain::worktree::{BasicWorktreeInfo, WorktreeInfo};
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, press_any_key_to_continue};
 
@@ -50,6 +50,23 @@ pub struct RenameAnalysis {
     pub can_rename_branch: bool,
     pub suggested_branch_name: Option<String>,
     pub is_feature_branch: bool,
+}
+
+fn lightweight_worktrees_to_display(worktrees: Vec<BasicWorktreeInfo>) -> Vec<WorktreeInfo> {
+    worktrees
+        .into_iter()
+        .map(|worktree| WorktreeInfo {
+            name: worktree.name,
+            git_name: worktree.git_name,
+            path: worktree.path,
+            branch: worktree.branch,
+            is_locked: worktree.is_locked,
+            is_current: worktree.is_current,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+        })
+        .collect()
 }
 
 /// Pure business logic for filtering renameable worktrees
@@ -151,7 +168,7 @@ pub fn rename_worktree() -> Result<()> {
 
 /// Internal implementation of rename_worktree with dependency injection
 pub fn rename_worktree_with_ui(manager: &GitWorktreeManager, ui: &dyn UserInterface) -> Result<()> {
-    let worktrees = manager.list_worktrees()?;
+    let worktrees = lightweight_worktrees_to_display(manager.list_worktrees_basic()?);
 
     if worktrees.is_empty() {
         println!();

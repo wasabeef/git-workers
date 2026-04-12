@@ -7,7 +7,7 @@ use crate::adapters::shell::switch_file::write_switch_path;
 use crate::constants::{
     section_header, DEFAULT_MENU_SELECTION, HOOK_POST_SWITCH, MSG_ALREADY_IN_WORKTREE,
 };
-use crate::domain::worktree::WorktreeInfo;
+use crate::domain::worktree::{BasicWorktreeInfo, WorktreeInfo};
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, press_any_key_to_continue};
 
@@ -58,6 +58,23 @@ pub struct SwitchAnalysis {
     pub worktrees: Vec<WorktreeInfo>,
     pub current_worktree_index: Option<usize>,
     pub is_already_current: bool,
+}
+
+fn lightweight_worktrees_to_display(worktrees: Vec<BasicWorktreeInfo>) -> Vec<WorktreeInfo> {
+    worktrees
+        .into_iter()
+        .map(|worktree| WorktreeInfo {
+            name: worktree.name,
+            git_name: worktree.git_name,
+            path: worktree.path,
+            branch: worktree.branch,
+            is_locked: worktree.is_locked,
+            is_current: worktree.is_current,
+            has_changes: false,
+            last_commit: None,
+            ahead_behind: None,
+        })
+        .collect()
 }
 
 /// Pure business logic for sorting worktrees for display
@@ -122,7 +139,7 @@ pub fn switch_worktree_with_ui(
     manager: &GitWorktreeManager,
     ui: &dyn UserInterface,
 ) -> Result<bool> {
-    let worktrees = manager.list_worktrees()?;
+    let worktrees = lightweight_worktrees_to_display(manager.list_worktrees_basic()?);
 
     if worktrees.is_empty() {
         println!();

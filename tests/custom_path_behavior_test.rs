@@ -42,6 +42,57 @@ fn test_custom_path_appends_worktree_name() -> Result<()> {
     Ok(())
 }
 
+/// Test that the first linked worktree still shows the location prompt
+#[test]
+fn test_first_worktree_still_prompts_for_location() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let test_repo = TestRepo::new(&temp_dir)?;
+    let manager = test_repo.manager()?;
+
+    let ui = TestUI::new()
+        .with_input("first-linked")
+        .with_selection(1) // custom path option from the first-worktree prompt
+        .with_input("work/")
+        .with_selection(0) // create from HEAD
+        .with_confirmation(false);
+
+    let result = create_worktree_with_ui(&manager, &ui)?;
+    assert!(!result);
+
+    let worktrees = manager.list_worktrees()?;
+    let worktree = worktrees
+        .iter()
+        .find(|w| w.name == "first-linked")
+        .expect("first-linked worktree should exist");
+    assert!(worktree.path.ends_with("work/first-linked"));
+
+    Ok(())
+}
+
+/// Test that once a linked worktree exists, create skips the location prompt
+#[test]
+fn test_subsequent_worktree_skips_location_prompt() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let test_repo = TestRepo::new(&temp_dir)?;
+    let manager = test_repo.manager()?;
+
+    manager.create_worktree_with_new_branch("seed-worktree", "seed-worktree", "main")?;
+
+    let ui = TestUI::new()
+        .with_input("second-linked")
+        .with_selection(0) // branch option only; if location prompt appears this test fails
+        .with_confirmation(false);
+
+    let result = create_worktree_with_ui(&manager, &ui)?;
+    assert!(!result);
+
+    let worktrees = manager.list_worktrees()?;
+    assert!(worktrees.iter().any(|w| w.name == "seed-worktree"));
+    assert!(worktrees.iter().any(|w| w.name == "second-linked"));
+
+    Ok(())
+}
+
 /// Test that "./" creates worktree in project root  
 #[test]
 fn test_dot_slash_creates_in_project_root() -> Result<()> {
