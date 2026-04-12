@@ -44,16 +44,21 @@
 //! let result = commands::list_worktrees();
 //! ```
 
+pub mod adapters;
+pub mod app;
 pub mod commands;
 pub mod config;
 pub mod constants;
 pub mod core;
+pub mod domain;
 pub mod git_interface;
 pub mod infrastructure;
 pub mod input_esc_raw;
 pub mod menu;
 pub mod repository_info;
+pub mod support;
 pub mod ui;
+pub mod usecases;
 pub mod utils;
 
 // Re-export infrastructure modules for backward compatibility
