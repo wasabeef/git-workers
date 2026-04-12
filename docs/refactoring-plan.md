@@ -21,6 +21,25 @@
 
 最初の実装では、`constants.rs` と `ui.rs` の全面移設は行わない。これらは参照箇所が広く、早い段階で動かすと diff が不要に大きくなるため、まずは `app / usecases / adapters` の責務境界を作ることを優先する。
 
+## 実施状況
+
+2026-04-12 時点で、以下は完了済み。
+
+- `main` の簡素化と `app` 層への menu loop / dispatch の移動
+- `create / delete / list / rename / switch / search / cleanup / edit_hooks` の `usecases` 化
+- `domain` への validation / path logic / repository context の集約
+- `adapters` の導入と `switch_file / config loader / editor / hooks / file_copy` の境界整理
+- 既存 `commands`, `repository_info`, `infrastructure` path の互換維持
+- hook 実行順と config fallback の契約 test 追加
+
+現時点で残っているのは「必須の refactoring 作業」ではなく、次期フェーズとしての任意改善である。
+
+任意の次フェーズ候補:
+
+- `infrastructure` の実体をさらに `adapters` へ移す
+- 互換 facade の縮小方針を決める
+- `lib.rs` の public API を将来的な deprecation 方針込みで整理する
+
 ## スコープ
 
 対象:
@@ -565,6 +584,11 @@ src/
 - `commands` と `infrastructure` の将来的な縮退余地ができる
 
 ## フェーズごとの PR 推奨分割
+
+補足:
+
+- 実施時にはこの分割をベースに進めたが、互換性維持と test 固定を優先して一部はまとめて着地している
+- 今後この計画を再利用する場合は、「完了済み phase」と「任意の後続改善」を分けて読むこと
 
 ### PR 1
 
