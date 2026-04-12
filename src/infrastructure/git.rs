@@ -35,79 +35,22 @@
 
 use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
-use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use super::super::constants::{
     COMMIT_ID_SHORT_LENGTH, DEFAULT_AUTHOR_UNKNOWN, DEFAULT_BRANCH_DETACHED,
-    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, ERROR_LOCK_CREATE, ERROR_LOCK_EXISTS,
-    ERROR_NO_PARENT_BARE_REPO, ERROR_NO_PARENT_DIR, ERROR_NO_REPO_DIR, ERROR_NO_REPO_WORKING_DIR,
-    ERROR_NO_WORKING_DIR, ERROR_WORKTREE_CREATE, ERROR_WORKTREE_PATH_EXISTS, GIT_ADD, GIT_BRANCH,
-    GIT_BRANCH_NOT_FOUND_MSG, GIT_CANNOT_FIND_PARENT, GIT_CANNOT_RENAME_CURRENT,
-    GIT_CANNOT_RENAME_DETACHED, GIT_CMD, GIT_COMMIT_AUTHOR_UNKNOWN, GIT_COMMIT_MESSAGE_NONE,
-    GIT_DEFAULT_MAIN_WORKTREE, GIT_DIR, GIT_GITDIR_PREFIX, GIT_GITDIR_SUFFIX, GIT_HEAD_INDEX,
-    GIT_NEW_NAME_NO_SPACES, GIT_OPT_BRANCH, GIT_OPT_GIT_COMMON_DIR, GIT_OPT_RENAME, GIT_ORIGIN,
-    GIT_REFS_REMOTES, GIT_REFS_TAGS, GIT_REPAIR, GIT_RESERVED_NAMES, GIT_REV_PARSE, GIT_WORKTREE,
-    LOCK_FILE_NAME, STALE_LOCK_TIMEOUT_SECS, TIME_FORMAT, WINDOW_FIRST_INDEX, WINDOW_SECOND_INDEX,
-    WINDOW_SIZE_PAIRS,
+    DEFAULT_BRANCH_UNKNOWN, DEFAULT_MESSAGE_NONE, ERROR_NO_PARENT_BARE_REPO, ERROR_NO_PARENT_DIR,
+    ERROR_NO_REPO_DIR, ERROR_NO_REPO_WORKING_DIR, ERROR_NO_WORKING_DIR, ERROR_WORKTREE_CREATE,
+    ERROR_WORKTREE_PATH_EXISTS, GIT_ADD, GIT_BRANCH, GIT_BRANCH_NOT_FOUND_MSG,
+    GIT_CANNOT_FIND_PARENT, GIT_CANNOT_RENAME_CURRENT, GIT_CANNOT_RENAME_DETACHED, GIT_CMD,
+    GIT_COMMIT_AUTHOR_UNKNOWN, GIT_COMMIT_MESSAGE_NONE, GIT_DEFAULT_MAIN_WORKTREE, GIT_DIR,
+    GIT_GITDIR_PREFIX, GIT_GITDIR_SUFFIX, GIT_HEAD_INDEX, GIT_NEW_NAME_NO_SPACES, GIT_OPT_BRANCH,
+    GIT_OPT_GIT_COMMON_DIR, GIT_OPT_RENAME, GIT_ORIGIN, GIT_REFS_REMOTES, GIT_REFS_TAGS,
+    GIT_REPAIR, GIT_RESERVED_NAMES, GIT_REV_PARSE, GIT_WORKTREE, TIME_FORMAT, WINDOW_FIRST_INDEX,
+    WINDOW_SECOND_INDEX, WINDOW_SIZE_PAIRS,
 };
 use super::filesystem::FileSystem;
-
-// Create Duration from constant for stale lock timeout
-const STALE_LOCK_TIMEOUT: Duration = Duration::from_secs(STALE_LOCK_TIMEOUT_SECS);
-
-/// Simple lock structure for worktree operations
-pub struct WorktreeLock {
-    lock_path: PathBuf,
-    _file: Option<File>,
-}
-
-impl WorktreeLock {
-    /// Attempts to acquire a lock for worktree operations
-    pub fn acquire(git_dir: &Path) -> Result<Self> {
-        let lock_path = git_dir.join(LOCK_FILE_NAME);
-
-        // Check for stale lock
-        if lock_path.exists() {
-            if let Ok(metadata) = lock_path.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        if elapsed > STALE_LOCK_TIMEOUT {
-                            // Remove stale lock
-                            let _ = fs::remove_file(&lock_path);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Try to create lock file exclusively
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    anyhow!(ERROR_LOCK_EXISTS)
-                } else {
-                    anyhow!("{}", ERROR_LOCK_CREATE.replace("{}", &e.to_string()))
-                }
-            })?;
-
-        Ok(WorktreeLock {
-            lock_path,
-            _file: Some(file),
-        })
-    }
-}
-
-impl Drop for WorktreeLock {
-    fn drop(&mut self) {
-        // Clean up lock file when lock is released
-        let _ = fs::remove_file(&self.lock_path);
-    }
-}
+pub use crate::adapters::git::worktree_lock::WorktreeLock;
 
 /// Finds the common parent directory of all worktrees
 ///
@@ -194,7 +137,7 @@ impl GitWorktreeManager {
     /// let manager = GitWorktreeManager::new().expect("Failed to open repository");
     /// ```
     pub fn new() -> Result<Self> {
-        let repo = Repository::open_from_env()?;
+        let repo = crate::adapters::git::repo_discovery::discover_repository_from_env()?;
         Ok(Self { repo })
     }
 
@@ -204,7 +147,7 @@ impl GitWorktreeManager {
     /// that needs to create a manager from a specific repository path.
     #[allow(dead_code)]
     pub fn new_from_path(path: &Path) -> Result<Self> {
-        let repo = Repository::open(path)?;
+        let repo = crate::adapters::git::repo_discovery::open_repository_at_path_raw(path)?;
         Ok(Self { repo })
     }
 

@@ -9,7 +9,7 @@ mod switch;
 // 公開インターフェース（変更なし）
 pub use create::{
     create_worktree, create_worktree_with_ui, determine_worktree_path, validate_worktree_creation,
-    BranchSource, WorktreeCreateConfig,
+    validate_worktree_location, BranchSource, WorktreeCreateConfig,
 };
 // Re-export validation functions from core module
 pub use super::core::{validate_custom_path, validate_worktree_name};

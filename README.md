@@ -108,12 +108,8 @@ For regular repositories, configuration is loaded from:
 
 ```toml
 [repository]
-# Optional: Specify repository URL to ensure hooks only run in the intended repository
-# url = "https://github.com/owner/repo.git"
-
-[repository]
-# Repository URL for identification (optional)
-# This ensures hooks only run in the intended repository
+# Optional: repository URL for identification
+# Hooks run only when the current repository matches this URL
 url = "https://github.com/wasabeef/git-workers.git"
 
 [hooks]

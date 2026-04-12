@@ -149,9 +149,13 @@ return Err(anyhow!("Error creating worktree: {}", error));
 
 ```
 src/
-├── commands/          # コマンド実装（機能別）
-├── core/             # コアロジック
-├── infrastructure/   # 外部依存（Git, ファイルシステム）
+├── app/              # 対話フロー、menu、presenter
+├── usecases/         # ユーザー操作ごとの orchestration
+├── adapters/         # 外部依存（Git, ファイルシステム、shell、UI）
+├── domain/           # validation、path、repo context
+├── commands/         # 互換 facade
+├── core/             # 旧 core ロジック（移行中の互換層）
+├── infrastructure/   # 旧 infrastructure 実装（互換層）
 ├── constants.rs      # 全定数の集約
 ├── ui.rs            # UI 抽象化
 └── utils.rs         # ユーティリティ

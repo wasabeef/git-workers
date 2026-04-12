@@ -80,7 +80,8 @@ struct CurrentDirGuard {
 
 impl CurrentDirGuard {
     fn change_to(path: &Path) -> Result<Self> {
-        let original = std::env::current_dir()?;
+        let original =
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         std::env::set_current_dir(path)?;
         Ok(Self { original })
     }
@@ -222,6 +223,24 @@ fn test_find_config_file_path_prefers_current_worktree_directory() -> Result<()>
     let manager = GitWorktreeManager::new_from_path(&worktree_path)?;
     let found_path = find_config_file_path(&manager)?;
     assert_eq!(found_path, worktree_path.join(".git-workers.toml"));
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn test_find_config_file_path_falls_back_to_main_worktree_from_subdirectory() -> Result<()> {
+    let (temp_dir, manager) = setup_non_bare_repo()?;
+
+    let config_path = temp_dir.path().join(".git-workers.toml");
+    fs::write(&config_path, "[worktree]\npattern = \"same-level\"")?;
+
+    let nested_dir = temp_dir.path().join("src").join("nested");
+    fs::create_dir_all(&nested_dir)?;
+
+    let _guard = CurrentDirGuard::change_to(&nested_dir)?;
+    let found_path = find_config_file_path(&manager)?;
+    assert_eq!(found_path.canonicalize()?, config_path.canonicalize()?);
 
     Ok(())
 }
