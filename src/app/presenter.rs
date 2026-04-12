@@ -5,7 +5,7 @@ use crate::constants::{
     EMOJI_LOCKED,
 };
 use crate::domain::repo_context;
-use crate::git::WorktreeInfo;
+use crate::domain::worktree::WorktreeInfo;
 
 pub fn build_header_lines() -> Vec<String> {
     let version = env!("CARGO_PKG_VERSION");

@@ -1,12 +1,13 @@
 use anyhow::Result;
 use colored::*;
 
+use crate::adapters::git::GitWorktreeManager;
 use crate::constants::{
     section_header, CURRENT_MARKER, ICON_CURRENT_WORKTREE, ICON_OTHER_WORKTREE, MODIFIED_STATUS_NO,
     MODIFIED_STATUS_YES, TABLE_HEADER_BRANCH, TABLE_HEADER_MODIFIED, TABLE_HEADER_NAME,
     TABLE_HEADER_PATH, TABLE_SEPARATOR, WARNING_NO_WORKTREES,
 };
-use crate::git::{GitWorktreeManager, WorktreeInfo};
+use crate::domain::worktree::WorktreeInfo;
 use crate::repository_info::get_repository_info;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::press_any_key_to_continue;
@@ -332,7 +333,7 @@ mod tests {
             branch: "feature".to_string(),
             is_current: false,
             has_changes: false,
-            last_commit: Some(crate::infrastructure::git::CommitInfo {
+            last_commit: Some(crate::adapters::git::CommitInfo {
                 id: test_commit_id.to_string(),
                 message: "Add feature".to_string(),
                 author: "test@example.com".to_string(),

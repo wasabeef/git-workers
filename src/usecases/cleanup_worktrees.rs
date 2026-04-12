@@ -1,8 +1,8 @@
 use anyhow::Result;
 use colored::*;
 
+use crate::adapters::git::GitWorktreeManager;
 use crate::constants::{section_header, DEFAULT_WORKTREE_CLEANUP_DAYS};
-use crate::git::GitWorktreeManager;
 use crate::input_esc_raw::input_esc_with_default_raw as input_esc_with_default;
 use crate::utils::{self, press_any_key_to_continue};
 

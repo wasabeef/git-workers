@@ -6,9 +6,29 @@
 use anyhow::Result;
 use git_workers::infrastructure::hooks::{execute_hooks, execute_hooks_with_ui, HookContext};
 use git_workers::ui::MockUI;
+use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+struct CurrentDirGuard {
+    original: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn change_to(path: &std::path::Path) -> Result<Self> {
+        let original =
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+        std::env::set_current_dir(path)?;
+        Ok(Self { original })
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
+    }
+}
 
 // ============================================================================
 // Hook Context Tests
@@ -425,5 +445,71 @@ post-create = []
     std::env::set_current_dir(original_dir)?;
 
     assert!(result.is_ok());
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn test_execute_hooks_preserves_order_and_expands_templates() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    git2::Repository::init(temp_dir.path())?;
+    let worktree_path = temp_dir.path().join("feature-x");
+    let log_path = worktree_path.join("hook.log");
+    fs::create_dir_all(&worktree_path)?;
+
+    let config_content = r#"
+[hooks]
+post-create = [
+    "printf 'first:{{worktree_name}}\n' >> hook.log",
+    "printf 'second:{{worktree_path}}\n' >> hook.log"
+]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let _guard = CurrentDirGuard::change_to(temp_dir.path())?;
+    let context = HookContext {
+        worktree_name: "feature-x".to_string(),
+        worktree_path: worktree_path.clone(),
+    };
+    let ui = MockUI::new().with_confirm(true);
+
+    execute_hooks_with_ui("post-create", &context, &ui)?;
+
+    let log = fs::read_to_string(&log_path)?;
+    let expected = format!(
+        "first:feature-x\nsecond:{}\n",
+        context.worktree_path.display()
+    );
+    assert_eq!(log, expected);
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn test_execute_hooks_skips_commands_when_confirmation_is_rejected() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    git2::Repository::init(temp_dir.path())?;
+    let worktree_path = temp_dir.path().join("feature-x");
+    let log_path = worktree_path.join("hook.log");
+    fs::create_dir_all(&worktree_path)?;
+
+    let config_content = r#"
+[hooks]
+post-create = ["printf 'should-not-run\n' >> hook.log"]
+"#;
+    fs::write(temp_dir.path().join(".git-workers.toml"), config_content)?;
+
+    let _guard = CurrentDirGuard::change_to(temp_dir.path())?;
+    let context = HookContext {
+        worktree_name: "feature-x".to_string(),
+        worktree_path,
+    };
+    let ui = MockUI::new().with_confirm(false);
+
+    execute_hooks_with_ui("post-create", &context, &ui)?;
+
+    assert!(!log_path.exists());
+
     Ok(())
 }

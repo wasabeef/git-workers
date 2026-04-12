@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Result};
 use colored::*;
 
+use crate::adapters::git::GitWorktreeManager;
 use crate::constants::{
     section_header, DEFAULT_BRANCH_DETACHED, DEFAULT_BRANCH_UNKNOWN, DEFAULT_MENU_SELECTION,
 };
-use crate::core::validate_worktree_name;
-use crate::git::{GitWorktreeManager, WorktreeInfo};
+use crate::domain::validation::validate_worktree_name;
+use crate::domain::worktree::WorktreeInfo;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, press_any_key_to_continue};
 

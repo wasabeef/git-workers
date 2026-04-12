@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 
+use crate::adapters::git::GitWorktreeManager;
 use crate::constants::{CONFIG_FILE_NAME, GIT_DIR};
-use crate::git::GitWorktreeManager;
 
 pub use crate::config::Config;
 

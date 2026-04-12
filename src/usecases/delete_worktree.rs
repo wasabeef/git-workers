@@ -2,9 +2,10 @@ use anyhow::{anyhow, Result};
 use colored::*;
 use dialoguer::{Confirm, MultiSelect};
 
+use crate::adapters::git::GitWorktreeManager;
+use crate::adapters::hooks::{self, HookContext};
 use crate::constants::{section_header, DEFAULT_MENU_SELECTION, HOOK_PRE_REMOVE};
-use crate::git::{GitWorktreeManager, WorktreeInfo};
-use crate::hooks::{self, HookContext};
+use crate::domain::worktree::WorktreeInfo;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, get_theme, press_any_key_to_continue};
 

@@ -4,7 +4,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::adapters::git::GitWorktreeManager;
+use crate::adapters::hooks::HookContext;
 use crate::adapters::shell::switch_file::write_switch_path;
+use crate::adapters::{filesystem::copy_configured_files, hooks};
 use crate::config::Config;
 use crate::constants::{
     section_header, BRANCH_OPTION_SELECT_BRANCH, BRANCH_OPTION_SELECT_TAG, DEFAULT_EMPTY_STRING,
@@ -16,13 +19,10 @@ use crate::constants::{
     OPTION_CUSTOM_PATH_FULL, OPTION_SELECT_BRANCH_FULL, OPTION_SELECT_TAG_FULL,
     PROGRESS_BAR_TICK_MILLIS, PROMPT_CONFLICT_ACTION, PROMPT_CUSTOM_PATH, PROMPT_SELECT_BRANCH,
     PROMPT_SELECT_BRANCH_OPTION, PROMPT_SELECT_TAG, PROMPT_SELECT_WORKTREE_LOCATION,
-    PROMPT_WORKTREE_NAME, SLASH_CHAR, STRING_CUSTOM, STRING_SAME_LEVEL,
-    TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREE_LOCATION_CUSTOM_PATH, WORKTREE_LOCATION_SAME_LEVEL,
+    PROMPT_WORKTREE_NAME, SLASH_CHAR, TAG_MESSAGE_TRUNCATE_LENGTH, WORKTREE_LOCATION_CUSTOM_PATH,
+    WORKTREE_LOCATION_SAME_LEVEL,
 };
-use crate::core::{validate_custom_path, validate_worktree_name};
-use crate::file_copy;
-use crate::git::GitWorktreeManager;
-use crate::hooks::{self, HookContext};
+use crate::domain::validation::{validate_custom_path, validate_worktree_name};
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, press_any_key_to_continue};
 
@@ -46,39 +46,9 @@ pub enum BranchSource {
     NewBranch { name: String, base: String },
 }
 
-/// Validate worktree location type
-pub fn validate_worktree_location(location: &str) -> Result<()> {
-    match location {
-        STRING_SAME_LEVEL | STRING_CUSTOM => Ok(()),
-        _ => Err(anyhow!("Invalid worktree location type: {}", location)),
-    }
-}
-
-/// Pure business logic for determining worktree path
-pub fn determine_worktree_path(
-    git_dir: &std::path::Path,
-    name: &str,
-    location: &str,
-    custom_path: Option<PathBuf>,
-) -> Result<(PathBuf, String)> {
-    validate_worktree_location(location)?;
-
-    match location {
-        STRING_SAME_LEVEL => {
-            let path = git_dir
-                .parent()
-                .ok_or_else(|| anyhow!("Cannot determine parent directory"))?
-                .join(name);
-            Ok((path, STRING_SAME_LEVEL.to_string()))
-        }
-        STRING_CUSTOM => {
-            let path = custom_path
-                .ok_or_else(|| anyhow!("Custom path required when location is 'custom'"))?;
-            Ok((git_dir.join(path), STRING_CUSTOM.to_string()))
-        }
-        _ => Err(anyhow!("Invalid location type: {}", location)),
-    }
-}
+pub use crate::domain::paths::{
+    determine_worktree_path, validate_worktree_creation, validate_worktree_location,
+};
 
 /// Pure business logic for determining worktree path (legacy)
 #[allow(dead_code)]
@@ -97,24 +67,6 @@ pub fn determine_worktree_path_legacy(
         }
         _ => Err(anyhow!("Invalid location choice")),
     }
-}
-
-/// Pure business logic for worktree creation validation
-#[allow(dead_code)]
-pub fn validate_worktree_creation(
-    name: &str,
-    path: &PathBuf,
-    existing_worktrees: &[crate::git::WorktreeInfo],
-) -> Result<()> {
-    if existing_worktrees.iter().any(|w| w.name == name) {
-        return Err(anyhow!("Worktree '{name}' already exists"));
-    }
-
-    if existing_worktrees.iter().any(|w| w.path == *path) {
-        return Err(anyhow!("Path '{}' already in use", path.display()));
-    }
-
-    Ok(())
 }
 
 pub fn create_worktree() -> Result<bool> {
@@ -533,7 +485,7 @@ pub fn create_worktree_with_ui(
             if !config.files.copy.is_empty() {
                 println!();
                 println!("Copying configured files...");
-                match file_copy::copy_configured_files(&config.files, &path, manager) {
+                match copy_configured_files(&config.files, &path, manager) {
                     Ok(copied) => {
                         if !copied.is_empty() {
                             let copied_count = copied.len();

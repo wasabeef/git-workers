@@ -2,13 +2,14 @@ use anyhow::{anyhow, Result};
 use colored::*;
 use dialoguer::FuzzySelect;
 
+use crate::adapters::git::GitWorktreeManager;
+use crate::adapters::hooks::{self, HookContext};
 use crate::constants::{
     section_header, HEADER_SEARCH_WORKTREES, HOOK_POST_SWITCH, MSG_ALREADY_IN_WORKTREE,
     MSG_NO_WORKTREES_TO_SEARCH, MSG_SEARCH_FUZZY_ENABLED, PROMPT_SELECT_WORKTREE_SWITCH,
     SEARCH_CURRENT_INDICATOR,
 };
-use crate::git::{GitWorktreeManager, WorktreeInfo};
-use crate::hooks::{self, HookContext};
+use crate::domain::worktree::WorktreeInfo;
 use crate::utils::{self, get_theme, press_any_key_to_continue};
 
 #[derive(Debug, Clone)]

@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Result};
 use colored::*;
 
+use crate::adapters::git::GitWorktreeManager;
+use crate::adapters::hooks::{self, HookContext};
 use crate::adapters::shell::switch_file::write_switch_path;
 use crate::constants::{
     section_header, DEFAULT_MENU_SELECTION, HOOK_POST_SWITCH, MSG_ALREADY_IN_WORKTREE,
 };
-use crate::git::{GitWorktreeManager, WorktreeInfo};
-use crate::hooks::{self, HookContext};
+use crate::domain::worktree::WorktreeInfo;
 use crate::ui::{DialoguerUI, UserInterface};
 use crate::utils::{self, press_any_key_to_continue};
 

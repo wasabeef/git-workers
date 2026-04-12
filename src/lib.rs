@@ -20,13 +20,17 @@
 //!
 //! The library is organized into several modules:
 //!
-//! - [`core`] - Core business logic, independent of UI and infrastructure
-//! - [`commands`] - Command implementations for menu items
+//! - [`app`] - Interactive application flow, menu wiring, and presentation helpers
+//! - [`usecases`] - Worktree-oriented orchestration for create/delete/list/rename/switch flows
+//! - [`adapters`] - Bridges to Git, filesystem, shell, hooks, config loading, and UI
+//! - [`domain`] - Validation, path logic, and repository-context helpers
+//! - [`core`] - Legacy core logic retained for compatibility during migration
+//! - [`commands`] - Backward-compatible facades for the public command API
 //! - [`config`] - Configuration file management
-//! - [`git`] - Core Git operations and worktree management
-//! - [`hooks`] - Hook system for custom commands
+//! - [`git`] - Backward-compatible re-export of Git worktree management types
+//! - [`hooks`] - Backward-compatible re-export of hook execution APIs
 //! - [`menu`] - Menu item definitions
-//! - [`repository_info`] - Repository context detection
+//! - [`repository_info`] - Backward-compatible repository context helpers
 //! - [`utils`] - Utility functions for terminal output
 //! - [`input_esc_raw`] - Custom input handling with ESC key support
 //! - [`ui`] - User interface abstraction layer for testability
@@ -61,5 +65,5 @@ pub mod ui;
 pub mod usecases;
 pub mod utils;
 
-// Re-export infrastructure modules for backward compatibility
+// Re-export legacy module paths for backward compatibility.
 pub use infrastructure::{file_copy, filesystem, git, hooks};

@@ -1,1 +1,1 @@
-pub use crate::git::WorktreeInfo;
+pub use crate::adapters::git::WorktreeInfo;
